@@ -1,0 +1,1 @@
+pyinstaller --noconfirm --onefile --windowed --icon "/Users/aleksandrgodov/Desktop/Стажировка/Calorimeter/icon.ico" --name "Юстировка калориметра" --add-data "/Users/aleksandrgodov/Desktop/Стажировка/Calorimeter/calorimeter_geometry.png:."  "/Users/aleksandrgodov/Desktop/Стажировка/Calorimeter/calorimeter_adjusting.py"
