@@ -132,25 +132,25 @@ def block_creating():
     tree.column("#2", stretch=NO, width=151)
     tree.column('#3', stretch=NO, width=90)
 
-    # Добавим заголовок столбца с чек боксами
-    check_lable = Label()
-    check_lable.config(
-            text="Активен",
-            relief=RAISED,
-            font=('Artifakt Element', 14, 'bold'),
-            borderwidth=2,
-            fg='white'
-            )
-    check_lable.pack(side='top', expand=False, fill=BOTH)
+    # # Добавим заголовок столбца с чек боксами
+    # check_lable = Label()
+    # check_lable.config(
+    #         text="Активен",
+    #         relief=RAISED,
+    #         font=('Artifakt Element', 14, 'bold'),
+    #         borderwidth=2,
+    #         fg='white'
+    #         )
+    # check_lable.pack(side='top', expand=False, fill=BOTH)
 
     window.mainloop()
 
     return tree
 
-def checkbutton_condition():
-    var = IntVar(value=0)
-    for el in check_button_list:
-        print(el)
+# def checkbutton_condition():
+#     var = IntVar(value=0)
+#     for el in check_button_list:
+#         print(el)
 
 def table_calculations(scale_int):
     # Поиск точки попадания пучка
@@ -292,16 +292,16 @@ def data_loading():
     # Импортируем данные калориметра
     data = np.genfromtxt(directory, delimiter=';', skip_header=True, skip_footer=True)
 
-    # Добавим нужное количество чек боксов
-    check_button_list = list()
-    for num_of_box in range(data.shape[1]):
-        var = IntVar(value=1)
-        check_button = Checkbutton(window, variable=var, command=checkbutton_condition)
-        check_button.pack(fill='x', expand=True, side='top')
+    # # Добавим нужное количество чек боксов
+    # check_button_list = list()
+    # for num_of_box in range(data.shape[1]):
+    #     var = IntVar(value=1)
+    #     check_button = Checkbutton(window, variable=var, command=checkbutton_condition)
+    #     check_button.pack(fill='x', expand=True, side='top')
 
-        check_button_list.append(var.get())
+    #     check_button_list.append(var.get())
         
-    return data, check_button_list
+    return data # , check_button_list
 
 def plots():
     # Построим графики по всем каналам 
