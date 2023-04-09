@@ -8,6 +8,4 @@ The basis repository for the developments of integrated calorimeter software.
 * <code>source venv/bin/activate</code>
 * <code>pip install -r requirements.txt</code>
 
-### Compiled GUI and console app for MacOS are avaible 
-
-Download the /output folder. **Note:** plots are not avaible.
+### Compiled GUI app for MacOS is avaible in the latest release
