@@ -10,4 +10,4 @@ The basis repository for the developments of integrated calorimeter software.
 
 ### Compiled GUI and console app for MacOS is avaible 
 
-Download the /output folder. ** Note: ** plots are not avaible.
+Download the /output folder. **Note:** plots are not avaible.
