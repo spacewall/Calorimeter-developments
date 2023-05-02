@@ -37,15 +37,17 @@ class OutputFrame(Frame):
         self.canvas.create_image(500, 420, image=self.img, anchor='center')
 
 
-def window_creating():
-    global window
-
+class AppWindow(Tk):
     # Инициализируем окно
-    window = Tk()
-    window.title("Юстировка калориметра")
-    # window.geometry('1438x1000')
-    window.geometry('1600x2560')
-    # window.resizable(width=False, height=False)
+    def __init__(self):
+        super().__init__()
+
+        self.title("Юстировка калориметра")
+        self.geometry('1600x2560')
+
+        # self.resizable(width=False, height=False)
+        self.geometry('1438x1000')
+
 
 def block_creating():
     global tree
@@ -128,9 +130,9 @@ def block_creating():
     tree.heading("energy", text="Q, кДж")
 
     # Зададим параметры колонок
-    tree.column("#1", stretch=NO, width=60)
-    tree.column("#2", stretch=NO, width=151)
-    tree.column('#3', stretch=NO, width=90)
+    tree.column("#1", stretch=NO, width=140)
+    tree.column("#2", stretch=NO, width=182)
+    tree.column('#3', stretch=NO, width=100)
 
     window.mainloop()
 
@@ -319,10 +321,10 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 def main():
-    global frame
+    global frame, window
 
     # Инициализация рабочей области
-    window_creating()
+    window = AppWindow()
 
     # Инициализация окна вывода
     frame = OutputFrame(window)
