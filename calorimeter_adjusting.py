@@ -205,20 +205,20 @@ def table_calculations(scale_int):
 def thermocouples_location(max_point_number):
     # Построим сетку термопар на схеме
     thermocouples = {
-        "1" : [False, 650, 515],
-        "2" : [True, 865, 402],
-        "3" : [False, 480, 585],
-        "4" : [True, 655, 402],
-        "5" : [False, 465, 225],
-        "6" : [False, 785, 345],
-        "7" : [False, 645, 290],
-        "8" : [False, 240, 680],
-        "9" : [False, 535, 245],
-        "10" : [True, 780, 402],
-        "11" : [False, 240, 120],
-        "12" : [False, 790, 460],
-        "13" : [True, 475, 402],
-        "14" : [True, 580, 260]
+        "1": [False, 650, 515],
+        "2": [True, 865, 402],
+        "3": [False, 480, 585],
+        "4": [True, 655, 402],
+        "5": [False, 465, 225],
+        "6": [False, 785, 345],
+        "7": [False, 645, 290],
+        "8": [False, 240, 680],
+        "9": [False, 535, 245],
+        "10": [True, 780, 402],
+        "11": [False, 240, 120],
+        "12": [False, 790, 460],
+        "13": [True, 475, 402],
+        "14": [True, 580, 260]
     }
 
     for number, coordinates in thermocouples.items():
@@ -284,18 +284,26 @@ def plots():
     # Построим графики по всем каналам 
     indx = 1
     colors = ['black', 'red', 'blue', 'yellow', 'green', '#8A2BE2', 'pink', 'violet', '#FF4500', '#C71585', '#FF8C00', '#BDB76B', '#4B0082', '#00FF00', '#00FFFF']
+    # Закроем все графические окна с зависимостями
+    plt.close()
+    fig, ax = plt.subplots(figsize=(10, 5))
+
     for collumns in range(0, data.shape[1]):
         x = data[:, collumns]
         # peaks, _ = find_peaks(x, height=0.2, width=100, prominence=1)
         # plt.plot(peaks, x[peaks], "x")
-        plt.plot(x, label=f"Термопара {indx}", color=colors[indx - 1])
-        plt.plot(np.zeros_like(x), "--", color="gray")
+        # fig.subplots_adjust(bottom=0.15, left=0.2)
+        ax.plot(x, label=f"Термопара {indx}", color=colors[indx - 1])
         indx += 1
 
+    ax.set_xlabel("Время, с")
+    ax.set_ylabel("Напряжение, В")
+    ax.plot(np.zeros_like(x), "--", color="gray")
+
     # Выведем графики в окно
-    plt.legend()
-    plt.title("Результаты измерений")
-    plt.show()
+    ax.legend()
+    ax.set_title("Результаты измерений")
+    fig.show()
 
 def data_plotting():
     try:
