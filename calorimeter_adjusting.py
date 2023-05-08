@@ -140,8 +140,9 @@ def block_creating():
 
 def table_calculations(scale_int):
     # Поиск точки попадания пучка
+    max_points_centered = [max(data[:, el] - np.dot(np.ones_like(data[:, el]), np.mean(data[0:20, el]))) for el in range(0, data.shape[1])]
+    max_point_number = max_points_centered .index(max(max_points_centered )) + 1 # номер термопары
     max_points = [max(data[:, el]) for el in range(0, data.shape[1])]
-    max_point_number = max_points.index(max(max_points)) + 1 # номер термопары
 
     # Посчитаем энергосодержание потока
     # Найдём точки минимума (список упорядочен по номерам термопар)
