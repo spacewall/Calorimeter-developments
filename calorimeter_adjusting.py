@@ -8,6 +8,7 @@ from scipy.signal import find_peaks, savgol_filter
 
 
 class OutputFrame(Frame):
+    """Класс отвечает за схему крепления термопар к калориметру с точкой попадания пучка"""
     def __init__(self, window):
         # Сделаем рамку для вывода графиков, рисунков и т. п.
         super().__init__(window)
@@ -38,6 +39,7 @@ class OutputFrame(Frame):
 
 
 class AppWindow(Tk):
+    """Объект окна Tkinter"""
     # Инициализируем окно
     def __init__(self):
         super().__init__()
@@ -50,6 +52,7 @@ class AppWindow(Tk):
 
 
 class BlockSet:
+    """Класс отвечает за работу блока управления программой и вывод информации в frame (экземпляр класса OutputFrame)"""
     def __init__(self, window, frame) -> None:
         self.window = window
         self.frame = frame
@@ -328,6 +331,7 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 def main():
+    """Запуск программы"""
     # Инициализация рабочей области
     window = AppWindow()
 
