@@ -1,7 +1,8 @@
-from tkinter import PhotoImage, Tk, Canvas, ttk, BOTH, RIDGE, Label, RAISED, NO
-from tkinter.ttk import Frame
 import sys, os
+from pprint import pprint
+from tkinter.ttk import Frame
 from tkinter.filedialog import askopenfilename
+from tkinter import PhotoImage, Tk, Canvas, ttk, BOTH, RIDGE, Label, RAISED, NO
 import numpy as np
 from matplotlib import pyplot as plt
 from scipy.signal import find_peaks, savgol_filter
@@ -51,7 +52,7 @@ class AppWindow(Tk):
         self.geometry('1438x1000')
 
 
-class BlockSet:
+class BlockSocket:
     """Класс отвечает за работу блока управления программой и вывод информации в frame (экземпляр класса OutputFrame)"""
     def __init__(self, window, frame) -> None:
         self.window = window
@@ -154,14 +155,14 @@ class BlockSet:
         min_points = [min(self.data[:, el]) for el in range(0, self.data.shape[1])]
 
         # Посчитаем производные
-        for collumns in range(0, self.data.shape[1]):
-            dU = np.diff(savgol_filter(self.data[:, collumns], 111, 3))
+        for collumn in range(0, self.data.shape[1]):
+            dU = np.diff(savgol_filter(self.data[:, collumn], 111, 3))
             derivate = list()
 
             for el in range(1, self.data.shape[0]):
                 derivate.append(dU[el - 1]/el)
 
-            if collumns == 0:
+            if collumn == 0:
                 summary = np.zeros(len(derivate))
             else:
                 summary =+ np.array(derivate)
@@ -177,13 +178,30 @@ class BlockSet:
         # Найдём точку термодинамического равновесия по индексу в массиве
         balance_points = [self.data[balance_indx, el] for el in range(0, self.data.shape[1])]
 
-        # Посчитаем энергосодержание потока
+        # Посчитаем энергосодержание потока при фиксированном интервале
         energies = list()
         for el in range(0, self.data.shape[1]):
             delta = balance_points[el] - min_points[el]
             energies.append(round(delta * 390 * 3 * 0.025, 2)) # 0.390 Дж/(кг °С) * 3 кг * 25 °С/мВ
 
-        # Блок анализа зависимостей (для тестирования)
+        # Построим зависимость энергии от выбора точки установления термодинамического равновесия
+        interval = range(peaks[-1] + 100, self.data.shape[0])
+        energies_matrix = np.ndarray((len(interval), self.data.shape[1]))
+        indx = 1
+        fig, ax = plt.subplots(figsize=(10, 5))
+
+        for row, balance_indx in enumerate(interval):
+            for collumn in range(0, self.data.shape[1]):
+                delta = balance_points[collumn] - min_points[collumn]
+                energies_matrix[row, collumn] = round(delta * 390 * 3 * 0.025, 2)
+            x = self.data[:, collumn]
+            ax.plot(x, label=f"Термопара {indx}")
+            indx += 1
+
+        plt.show()
+
+        pprint(energies_matrix)
+        print(energies_matrix.shape)
         # plt.plot(summary)
         # plt.plot(peaks, summary[peaks], "x")
         # plt.plot(np.zeros_like(summary), "--", color="gray")
@@ -290,8 +308,8 @@ class BlockSet:
         plt.close()
         fig, ax = plt.subplots(figsize=(10, 5))
 
-        for collumns in range(0, self.data.shape[1]):
-            x = self.data[:, collumns]
+        for collumn in range(0, self.data.shape[1]):
+            x = self.data[:, collumn]
             # peaks, _ = find_peaks(x, height=0.2, width=100, prominence=1)
             # plt.plot(peaks, x[peaks], "x")
             # fig.subplots_adjust(bottom=0.15, left=0.2)
@@ -322,7 +340,6 @@ class BlockSet:
 
 def resource_path(relative_path):
     """Возвращает обсолютный путь объекта, работает для PyInstaller при компиляции в один файл"""
-
     try:
         base_path = sys._MEIPASS
     except Exception:
@@ -341,7 +358,7 @@ def main():
     frame.pack(side='left', fill=BOTH, expand=True)
 
     # Инициализация блока управления
-    BlockSet(window, frame)
+    BlockSocket(window, frame)
 
 if __name__ == "__main__":
     main()
