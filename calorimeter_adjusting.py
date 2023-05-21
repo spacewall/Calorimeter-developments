@@ -9,7 +9,7 @@ from scipy.signal import find_peaks, savgol_filter
 
 
 class OutputFrame(Frame):
-    """Класс отвечает за схему крепления термопар к калориметру с точкой попадания пучка"""
+    """Класс отвечает за графическое окно с схемой крепления термопар к калориметру"""
     def __init__(self, window):
         # Сделаем рамку для вывода графиков, рисунков и т. п.
         super().__init__(window)
@@ -40,7 +40,7 @@ class OutputFrame(Frame):
 
 
 class AppWindow(Tk):
-    """Объект окна Tkinter"""
+    """Объект окна Tkinter - окно приложения"""
     # Инициализируем окно
     def __init__(self):
         super().__init__()
@@ -53,11 +53,10 @@ class AppWindow(Tk):
 
 
 class BlockSocket:
-    """Класс отвечает за работу блока управления программой и вывод информации в frame (экземпляр класса OutputFrame)"""
+    """Класс отвечает за отрисовку блока управления, расчёты и вывод информации"""
     def __init__(self, window, frame) -> None:
         self.window = window
         self.frame = frame
-        # self.data = self.data_loading()
 
         # Создадим кнопки, заголовки и таблицу блока взаимодействия
         # Добавим заголовок
@@ -143,11 +142,13 @@ class BlockSocket:
 
         self.window.mainloop()
 
-
     def table_calculations(self, scale_int) -> int:
+        # Объявим глобальные переменные исключительно для функции energy_dependencies_plots
+        global peaks, min_points
+
         # Поиск точки попадания пучка
         max_points_centered = [max(self.data[:, el] - np.dot(np.ones_like(self.data[:, el]), np.mean(self.data[0:20, el]))) for el in range(0, self.data.shape[1])]
-        max_point_number = max_points_centered .index(max(max_points_centered )) + 1 # номер термопары
+        max_point_number = max_points_centered.index(max(max_points_centered)) + 1 # номер термопары
         max_points = [max(self.data[:, el]) for el in range(0, self.data.shape[1])]
 
         # Посчитаем энергосодержание потока
@@ -155,7 +156,7 @@ class BlockSocket:
         min_points = [min(self.data[:, el]) for el in range(0, self.data.shape[1])]
 
         # Посчитаем производные
-        for collumn in range(0, self.data.shape[1]):
+        for collumn in range(self.data.shape[1]):
             dU = np.diff(savgol_filter(self.data[:, collumn], 111, 3))
             derivate = list()
 
@@ -184,32 +185,6 @@ class BlockSocket:
             delta = balance_points[el] - min_points[el]
             energies.append(round(delta * 390 * 3 * 0.025, 2)) # 0.390 Дж/(кг °С) * 3 кг * 25 °С/мВ
 
-        # Построим зависимость энергии от выбора точки установления термодинамического равновесия
-        interval = range(peaks[-1] + 100, self.data.shape[0])
-        energies_matrix = np.ndarray((len(interval), self.data.shape[1]))
-        indx = 1
-        fig, ax = plt.subplots(figsize=(10, 5))
-
-        for row, balance_indx in enumerate(interval):
-            for collumn in range(0, self.data.shape[1]):
-                delta = balance_points[collumn] - min_points[collumn]
-                energies_matrix[row, collumn] = round(delta * 390 * 3 * 0.025, 2)
-            x = self.data[:, collumn]
-            ax.plot(x, label=f"Термопара {indx}")
-            indx += 1
-
-        plt.show()
-
-        pprint(energies_matrix)
-        print(energies_matrix.shape)
-        # plt.plot(summary)
-        # plt.plot(peaks, summary[peaks], "x")
-        # plt.plot(np.zeros_like(summary), "--", color="gray")
-        # plt.show()
-
-        # plt.plot(balance_indx * np.ones_like(balance_points), balance_points, "x")
-        # data_plotting()
-
         # Сделаем список из кортежей
         table_data = list()
         indx = 1
@@ -225,7 +200,22 @@ class BlockSocket:
             self.tree.insert("", 'end', values=el)
 
         return max_point_number
+    
+    def energy_dependencies_plots(self):
+        # Построим зависимость энергии от выбора точки установления термодинамического равновесия
+        SLICE_FIELD = slice(peaks[-1] + 100, self.data.shape[0])
+        interval_data = self.data[SLICE_FIELD, :]
 
+        plt.close()
+        fig, ax = plt.subplots(figsize=(10, 5))
+        
+        for collumn in range(interval_data.shape[1]):
+            delta = interval_data[:, collumn] - np.ones_like(interval_data[:, 0]) * min_points[collumn]
+            ax.plot(np.dot(delta, 390 * 3 * 0.025), label=f"Термопара {collumn + 1}")
+
+        plt.show()
+
+        
     def thermocouples_location(self, max_point_number) -> None:
         # Построим сетку термопар на схеме
         thermocouples = {
@@ -281,6 +271,9 @@ class BlockSocket:
 
             # Выведем в окно сетку термопар
             self.thermocouples_location(max_point_number)
+
+            # Построим и выведем энергетические зависимости
+            self.energy_dependencies_plots()
         except AttributeError:
             # Подгрузим данные
             self.data_loading()
@@ -290,6 +283,9 @@ class BlockSocket:
 
             # Выведем в окно сетку термопар
             self.thermocouples_location(max_point_number)
+
+            # Построим и выведем энергетические зависимости
+            self.energy_dependencies_plots()
         except FileNotFoundError:
             pass
 
@@ -337,6 +333,7 @@ class BlockSocket:
             self.plots()
         except FileNotFoundError:
             pass
+
 
 def resource_path(relative_path):
     """Возвращает обсолютный путь объекта, работает для PyInstaller при компиляции в один файл"""
