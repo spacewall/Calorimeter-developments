@@ -210,18 +210,42 @@ class BlockSocket:
         # Построим зависимость энергии от выбора точки установления термодинамического равновесия
         SLICE_FIELD = slice(peaks[-1] + 100, self.data.shape[0])
         interval_data = self.data[SLICE_FIELD, :]
+        energy_packet = np.zeros(interval_data.shape)
 
         plt.close()
-        fig, (ax_1, ax_2) = plt.subplots(1, 2, figsize=(10, 5))
+        fig, (ax_1, ax_2) = plt.subplots(2, 2, figsize=(12, 7))
         
         for collumn in range(interval_data.shape[1]):
             delta = interval_data[:, collumn] - np.ones_like(interval_data[:, 0]) * min_points[collumn]
-            energies = np.dot(delta, 390 * 3 * 0.025)
+            # energies = np.dot(delta, 390 * 3 * 0.025)
+            energies = savgol_filter(np.dot(delta, 390 * 3 * 0.025), 300, 5)
+            energy_packet[:, collumn] = energies
 
-            ax_1.plot(savgol_filter(energies, 111, 5), label=f"Термопара {collumn + 1}")
-            ax_2.plot(savgol_filter(np.diff(energies), 111, 3))
+            # ax_1[0].plot(savgol_filter(energies, 111, 5), label=f"Термопара {collumn + 1}")
+            ax_1[0].plot(energies, label=f"Термопара {collumn + 1}")
+            ax_1[0].plot(np.zeros_like(energies), "--", color="gray")
+            ax_1[1].plot(np.divide(np.diff(savgol_filter(energies, 550, 5)), np.diff(np.array(range(0, interval_data.shape[0])))))
+            # ax_1[1].plot(savgol_filter(np.diff(energies), 550, 5))
+            ax_1[1].plot(np.diff(energies), label=f"Термопара {collumn + 1}")
+            ax_1[1].plot(np.zeros_like(energies), "--", color="gray")
 
-        plt.show()
+        ax_1[0].set_xlabel("Время, с")
+        ax_1[1].set_xlabel("Время, с")
+        ax_1[0].set_ylabel("Энергия Q, переданная калориметру, кДж")
+        ax_1[1].set_ylabel("Дифференциальная энергия dQ, кДж")
+
+        error = list()
+        for row in range(interval_data.shape[0]):
+            error_rate = max(energy_packet[row, :]) - min(energy_packet[row, :])
+
+            error.append(error_rate)
+
+        # print(error)
+        ax_2[0].plot(error)
+        ax_2[0].set_xlabel("Время, с")
+        ax_2[0].set_ylabel("Величина погрешности ∆Q, кДж")
+
+        fig.show()
         
     def thermocouples_location(self, max_point_number) -> None:
         # Построим сетку термопар на схеме
