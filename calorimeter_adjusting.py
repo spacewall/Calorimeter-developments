@@ -156,12 +156,10 @@ class BlockSocket:
         min_points = [min(self.data[:, el]) for el in range(0, self.data.shape[1])]
 
         # Посчитаем производные
+        dt = np.diff(np.array(range(0, self.data.shape[0])))
         for collumn in range(self.data.shape[1]):
             dU = np.diff(savgol_filter(self.data[:, collumn], 111, 3))
-            derivate = list()
-
-            for el in range(1, self.data.shape[0]):
-                derivate.append(dU[el - 1]/el)
+            derivate = np.divide(dU, dt)
 
             if collumn == 0:
                 summary = np.zeros(len(derivate))
@@ -172,7 +170,14 @@ class BlockSocket:
         summary = summary[100::] * 1000
 
         # Отыщем минимумы производных
-        peaks, _ = find_peaks(-1*summary, height=0.02)
+        peaks, _ = find_peaks(- 1 * summary, height=1.1)
+        
+        # Блок анализа производной
+        # plt.plot(summary)
+        # x = self.data[:, collumn]
+        # plt.plot(peaks, x[peaks], "x")
+        # plt.plot(np.zeros_like(x), "--", color="gray")
+        # plt.show()
 
         # Теперь получим номер точки, где установилось термодинамическое равновесие
         balance_indx = peaks[-1] + 100 + scale_int # 100 за компенсацию среза
@@ -207,14 +212,16 @@ class BlockSocket:
         interval_data = self.data[SLICE_FIELD, :]
 
         plt.close()
-        fig, ax = plt.subplots(figsize=(10, 5))
+        fig, (ax_1, ax_2) = plt.subplots(1, 2, figsize=(10, 5))
         
         for collumn in range(interval_data.shape[1]):
             delta = interval_data[:, collumn] - np.ones_like(interval_data[:, 0]) * min_points[collumn]
-            ax.plot(np.dot(delta, 390 * 3 * 0.025), label=f"Термопара {collumn + 1}")
+            energies = np.dot(delta, 390 * 3 * 0.025)
+
+            ax_1.plot(savgol_filter(energies, 111, 5), label=f"Термопара {collumn + 1}")
+            ax_2.plot(savgol_filter(np.diff(energies), 111, 3))
 
         plt.show()
-
         
     def thermocouples_location(self, max_point_number) -> None:
         # Построим сетку термопар на схеме
