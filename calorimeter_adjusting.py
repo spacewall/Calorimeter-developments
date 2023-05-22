@@ -152,18 +152,15 @@ class BlockSocket:
 
         self.window.mainloop()
 
-    def table_calculations(self, scale_int) -> int:
-        # Объявим глобальные переменные исключительно для функции energy_dependencies_plots
-        global peaks, min_points
-
+    def pre_calculations(self) -> int:
         # Поиск точки попадания пучка
         max_points_centered = [max(self.data[:, el] - np.dot(np.ones_like(self.data[:, el]), np.mean(self.data[0:20, el]))) for el in range(0, self.data.shape[1])]
         max_point_number = max_points_centered.index(max(max_points_centered)) + 1 # номер термопары
-        max_points = [max(self.data[:, el]) for el in range(0, self.data.shape[1])]
+        self.max_points = [max(self.data[:, el]) for el in range(0, self.data.shape[1])]
 
         # Посчитаем энергосодержание потока
         # Найдём точки минимума (список упорядочен по номерам термопар)
-        min_points = [min(self.data[:, el]) for el in range(0, self.data.shape[1])]
+        self.min_points = [min(self.data[:, el]) for el in range(0, self.data.shape[1])]
 
         # Посчитаем производные
         dt = np.diff(np.array(range(0, self.data.shape[0])))
@@ -177,11 +174,14 @@ class BlockSocket:
                 summary =+ np.array(derivate)
         
         # Сделаем срез лишней части массива, где производная неопределена
-        summary = summary[100::] * 1000
+        self.summary = summary[100::] * 1000
 
         # Отыщем минимумы производных
-        peaks, _ = find_peaks(- 1 * summary, height=1.1)
-        
+        self.peaks, _ = find_peaks(- 1 * self.summary, height=1.1)
+
+        return max_point_number
+
+    def table_calculations(self, scale_int):
         # Блок анализа производной
         # plt.plot(summary)
         # x = self.data[:, collumn]
@@ -190,20 +190,20 @@ class BlockSocket:
         # plt.show()
 
         # Теперь получим номер точки, где установилось термодинамическое равновесие
-        balance_indx = peaks[-1] + 100 + scale_int # 100 за компенсацию среза
+        balance_indx = self.peaks[-1] + 100 + scale_int # 100 за компенсацию среза
         # Найдём точку термодинамического равновесия по индексу в массиве
         balance_points = [self.data[balance_indx, el] for el in range(0, self.data.shape[1])]
 
         # Посчитаем энергосодержание потока при фиксированном интервале
         energies = list()
         for el in range(0, self.data.shape[1]):
-            delta = balance_points[el] - min_points[el]
+            delta = balance_points[el] - self.min_points[el]
             energies.append(round(delta * 390 * 3 * 0.025, 2)) # 0.390 Дж/(кг °С) * 3 кг * 25 °С/мВ
 
         # Сделаем список из кортежей
         table_data = list()
         indx = 1
-        for point in max_points:
+        for point in self.max_points:
             table_data.append((indx, round(point*25, 2), energies[indx - 1])) # умножили на коэффициент перевода в температуру
             indx += 1
 
@@ -213,66 +213,68 @@ class BlockSocket:
         # Выведем данные в таблицу
         for el in table_data:
             self.tree.insert("", 'end', values=el)
-
-        return max_point_number
     
     def energy_dependencies_plots(self):
+        # Получим необходимые переменные
         try:
-            # Построим зависимость энергии от выбора точки установления термодинамического равновесия
-            SLICE_FIELD = slice(peaks[-1] + 100, self.data.shape[0])
-            interval_data = self.data[SLICE_FIELD, :]
-            energy_packet = np.zeros(interval_data.shape)
+            self.pre_calculations()
+        except AttributeError:
+            self.data_loading()
+            self.pre_calculations()
 
-            plt.close()
-            fig, (ax_1, ax_2) = plt.subplots(2, 2, figsize=(12, 9))
-            
-            for collumn in range(interval_data.shape[1]):
-                delta = interval_data[:, collumn] - np.ones_like(interval_data[:, 0]) * min_points[collumn]
-                # energies = np.dot(delta, 390 * 3 * 0.025)
-                energies = savgol_filter(np.dot(delta, 390 * 3 * 0.025), 300, 5)
-                energy_packet[:, collumn] = np.dot(delta, 390 * 3 * 0.025)
+        # Построим зависимость энергии от выбора точки установления термодинамического равновесия
+        SLICE_FIELD = slice(self.peaks[-1] + 100, self.data.shape[0])
+        interval_data = self.data[SLICE_FIELD, :]
+        energy_packet = np.zeros(interval_data.shape)
 
-                # ax_1[0].plot(savgol_filter(energies, 111, 5), label=f"Термопара {collumn + 1}")
-                ax_1[0].plot(energies, label=f"Термопара {collumn + 1}")
-                # ax_1[1].plot(np.divide(np.diff(savgol_filter(energies, 550, 5)), np.diff(np.array(range(0, interval_data.shape[0])))))
-                # ax_1[1].plot(savgol_filter(np.diff(energies), 550, 5))
-                ax_1[1].plot(np.diff(energies), label=f"Термопара {collumn + 1}")
+        plt.close()
+        fig, (ax_1, ax_2) = plt.subplots(2, 2, figsize=(12, 9))
+        
+        for collumn in range(interval_data.shape[1]):
+            delta = interval_data[:, collumn] - np.ones_like(interval_data[:, 0]) * self.min_points[collumn]
+            # energies = np.dot(delta, 390 * 3 * 0.025)
+            energies = savgol_filter(np.dot(delta, 390 * 3 * 0.025), 300, 5)
+            energy_packet[:, collumn] = np.dot(delta, 390 * 3 * 0.025)
 
-            ax_1[0].plot(np.zeros_like(energies), "--", color="gray")
-            ax_1[1].plot(np.zeros_like(energies), "--", color="gray")
-            ax_1[0].set_xlabel("Время, с")
-            ax_1[1].set_xlabel("Время, с")
-            ax_1[0].set_ylabel("Q, кДж")
-            ax_1[1].set_ylabel("dQ, кДж")
-            ax_1[0].set_title("Дифференциальная энергия dQ, переданная калориметру")
-            ax_1[1].set_title("Энергия Q, переданная калориметру")
-            ax_1[0].legend()
-            ax_1[1].legend()
+            # ax_1[0].plot(savgol_filter(energies, 111, 5), label=f"Термопара {collumn + 1}")
+            ax_1[0].plot(energies, label=f"Термопара {collumn + 1}")
+            # ax_1[1].plot(np.divide(np.diff(savgol_filter(energies, 550, 5)), np.diff(np.array(range(0, interval_data.shape[0])))))
+            # ax_1[1].plot(savgol_filter(np.diff(energies), 550, 5))
+            ax_1[1].plot(np.diff(energies), label=f"Термопара {collumn + 1}")
 
-            error = list()
-            for row in range(interval_data.shape[0]):
-                error_rate = max(energy_packet[row, :]) - min(energy_packet[row, :])
+        ax_1[0].plot(np.zeros_like(energies), "--", color="gray")
+        ax_1[1].plot(np.zeros_like(energies), "--", color="gray")
+        ax_1[0].set_xlabel("Время, с")
+        ax_1[1].set_xlabel("Время, с")
+        ax_1[0].set_ylabel("Q, кДж")
+        ax_1[1].set_ylabel("dQ, кДж")
+        ax_1[0].set_title("Дифференциальная энергия dQ, переданная калориметру")
+        ax_1[1].set_title("Энергия Q, переданная калориметру")
+        ax_1[0].legend()
+        ax_1[1].legend()
 
-                error.append(error_rate)
+        error = list()
+        for row in range(interval_data.shape[0]):
+            error_rate = max(energy_packet[row, :]) - min(energy_packet[row, :])
 
-            ax_2[0].plot(error)
-            ax_2[0].set_title("Погрешность (разность показаний)")
-            ax_2[0].set_xlabel("Время, с")
-            ax_2[0].set_ylabel("∆Q, кДж")
-            
-            # for collumn in range(interval_data.shape[1]):
-            #     # ax_2[1].errorbar(range(len(energy_packet[:, collumn])), energy_packet[:, collumn], yerr=error, fmt='o-', ecolor='red', capsize=4)
-                # ax_2[1].plot(energy_packet[:, collumn] - error)
+            error.append(error_rate)
 
-            ax_2[1].plot(savgol_filter(np.diff(error), 200, 7))
-            ax_2[1].plot(np.zeros_like(error), "--", color="gray")
-            ax_2[1].set_title("Дифференциальная погрешность")
-            ax_2[1].set_xlabel("Время, с")
-            ax_2[1].set_ylabel("d(∆Q), кДж")
+        ax_2[0].plot(error)
+        ax_2[0].set_title("Погрешность (разность показаний)")
+        ax_2[0].set_xlabel("Время, с")
+        ax_2[0].set_ylabel("∆Q, кДж")
+        
+        # for collumn in range(interval_data.shape[1]):
+        #     # ax_2[1].errorbar(range(len(energy_packet[:, collumn])), energy_packet[:, collumn], yerr=error, fmt='o-', ecolor='red', capsize=4)
+            # ax_2[1].plot(energy_packet[:, collumn] - error)
 
-            fig.show()
-        except NameError:
-            self.data_analysis()
+        ax_2[1].plot(savgol_filter(np.diff(error), 200, 7))
+        ax_2[1].plot(np.zeros_like(error), "--", color="gray")
+        ax_2[1].set_title("Дифференциальная погрешность")
+        ax_2[1].set_xlabel("Время, с")
+        ax_2[1].set_ylabel("d(∆Q), кДж")
+
+        fig.show()
         
     def thermocouples_location(self, max_point_number) -> None:
         # Построим сетку термопар на схеме
@@ -325,25 +327,21 @@ class BlockSocket:
     def data_analysis(self, scale_int=560) -> None:
         try:
             # Рассчитаем данные для таблицы
-            max_point_number = self.table_calculations(scale_int)
+            max_point_number = self.pre_calculations()
+            self.table_calculations(scale_int)
 
             # Выведем в окно сетку термопар
             self.thermocouples_location(max_point_number)
-
-            # Построим и выведем энергетические зависимости
-            self.energy_dependencies_plots()
         except AttributeError:
             # Подгрузим данные
             self.data_loading()
 
             # Рассчитаем данные для таблицы
-            max_point_number = self.table_calculations(scale_int)
+            max_point_number = self.pre_calculations()
+            self.table_calculations(scale_int)
 
             # Выведем в окно сетку термопар
             self.thermocouples_location(max_point_number)
-
-            # Построим и выведем энергетические зависимости
-            self.energy_dependencies_plots()
         except FileNotFoundError:
             pass
 
