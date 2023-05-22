@@ -76,7 +76,7 @@ class BlockSocket:
         _style.configure(
             'W.TButton',
             foreground='black',
-            font=('Artifakt Element', 20)
+            font=('Artifakt Element', 19)
             )
 
         # Добавим кнопку демонстрации точки столкновения
@@ -99,15 +99,25 @@ class BlockSocket:
             )
         change_data_pack_button.pack(side='top', ipadx=34, ipady=20)
 
-        # Добавим кнопку построения графиков
+        # Добавим кнопку построения исходных зависимостей
         plot_graphs_button = ttk.Button(
             window,
-            text="Построить зависимости",
+            text="Построить исходные зависимости",
             width=25,
             style='W.TButton',
             command=self.data_plotting
             )
         plot_graphs_button.pack(side='top', ipadx=34, ipady=20)
+
+        # Добавим кнопку построения энергетических зависимостей
+        plot_energy_graphs_button = ttk.Button(
+            window,
+            text="Построить энергетические зависимости",
+            width=25,
+            style='W.TButton',
+            command=self.energy_dependencies_plots
+            )
+        plot_energy_graphs_button.pack(side='top', ipadx=34, ipady=20)
 
         # Создадим стиль таблицы
         _style.configure(
@@ -207,45 +217,62 @@ class BlockSocket:
         return max_point_number
     
     def energy_dependencies_plots(self):
-        # Построим зависимость энергии от выбора точки установления термодинамического равновесия
-        SLICE_FIELD = slice(peaks[-1] + 100, self.data.shape[0])
-        interval_data = self.data[SLICE_FIELD, :]
-        energy_packet = np.zeros(interval_data.shape)
+        try:
+            # Построим зависимость энергии от выбора точки установления термодинамического равновесия
+            SLICE_FIELD = slice(peaks[-1] + 100, self.data.shape[0])
+            interval_data = self.data[SLICE_FIELD, :]
+            energy_packet = np.zeros(interval_data.shape)
 
-        plt.close()
-        fig, (ax_1, ax_2) = plt.subplots(2, 2, figsize=(12, 7))
-        
-        for collumn in range(interval_data.shape[1]):
-            delta = interval_data[:, collumn] - np.ones_like(interval_data[:, 0]) * min_points[collumn]
-            # energies = np.dot(delta, 390 * 3 * 0.025)
-            energies = savgol_filter(np.dot(delta, 390 * 3 * 0.025), 300, 5)
-            energy_packet[:, collumn] = energies
+            plt.close()
+            fig, (ax_1, ax_2) = plt.subplots(2, 2, figsize=(12, 9))
+            
+            for collumn in range(interval_data.shape[1]):
+                delta = interval_data[:, collumn] - np.ones_like(interval_data[:, 0]) * min_points[collumn]
+                # energies = np.dot(delta, 390 * 3 * 0.025)
+                energies = savgol_filter(np.dot(delta, 390 * 3 * 0.025), 300, 5)
+                energy_packet[:, collumn] = np.dot(delta, 390 * 3 * 0.025)
 
-            # ax_1[0].plot(savgol_filter(energies, 111, 5), label=f"Термопара {collumn + 1}")
-            ax_1[0].plot(energies, label=f"Термопара {collumn + 1}")
+                # ax_1[0].plot(savgol_filter(energies, 111, 5), label=f"Термопара {collumn + 1}")
+                ax_1[0].plot(energies, label=f"Термопара {collumn + 1}")
+                # ax_1[1].plot(np.divide(np.diff(savgol_filter(energies, 550, 5)), np.diff(np.array(range(0, interval_data.shape[0])))))
+                # ax_1[1].plot(savgol_filter(np.diff(energies), 550, 5))
+                ax_1[1].plot(np.diff(energies), label=f"Термопара {collumn + 1}")
+
             ax_1[0].plot(np.zeros_like(energies), "--", color="gray")
-            ax_1[1].plot(np.divide(np.diff(savgol_filter(energies, 550, 5)), np.diff(np.array(range(0, interval_data.shape[0])))))
-            # ax_1[1].plot(savgol_filter(np.diff(energies), 550, 5))
-            ax_1[1].plot(np.diff(energies), label=f"Термопара {collumn + 1}")
             ax_1[1].plot(np.zeros_like(energies), "--", color="gray")
+            ax_1[0].set_xlabel("Время, с")
+            ax_1[1].set_xlabel("Время, с")
+            ax_1[0].set_ylabel("Q, кДж")
+            ax_1[1].set_ylabel("dQ, кДж")
+            ax_1[0].set_title("Дифференциальная энергия dQ, переданная калориметру")
+            ax_1[1].set_title("Энергия Q, переданная калориметру")
+            ax_1[0].legend()
+            ax_1[1].legend()
 
-        ax_1[0].set_xlabel("Время, с")
-        ax_1[1].set_xlabel("Время, с")
-        ax_1[0].set_ylabel("Энергия Q, переданная калориметру, кДж")
-        ax_1[1].set_ylabel("Дифференциальная энергия dQ, кДж")
+            error = list()
+            for row in range(interval_data.shape[0]):
+                error_rate = max(energy_packet[row, :]) - min(energy_packet[row, :])
 
-        error = list()
-        for row in range(interval_data.shape[0]):
-            error_rate = max(energy_packet[row, :]) - min(energy_packet[row, :])
+                error.append(error_rate)
 
-            error.append(error_rate)
+            ax_2[0].plot(error)
+            ax_2[0].set_title("Погрешность (разность показаний)")
+            ax_2[0].set_xlabel("Время, с")
+            ax_2[0].set_ylabel("∆Q, кДж")
+            
+            # for collumn in range(interval_data.shape[1]):
+            #     # ax_2[1].errorbar(range(len(energy_packet[:, collumn])), energy_packet[:, collumn], yerr=error, fmt='o-', ecolor='red', capsize=4)
+                # ax_2[1].plot(energy_packet[:, collumn] - error)
 
-        # print(error)
-        ax_2[0].plot(error)
-        ax_2[0].set_xlabel("Время, с")
-        ax_2[0].set_ylabel("Величина погрешности ∆Q, кДж")
+            ax_2[1].plot(savgol_filter(np.diff(error), 200, 7))
+            ax_2[1].plot(np.zeros_like(error), "--", color="gray")
+            ax_2[1].set_title("Дифференциальная погрешность")
+            ax_2[1].set_xlabel("Время, с")
+            ax_2[1].set_ylabel("d(∆Q), кДж")
 
-        fig.show()
+            fig.show()
+        except NameError:
+            self.data_analysis()
         
     def thermocouples_location(self, max_point_number) -> None:
         # Построим сетку термопар на схеме
