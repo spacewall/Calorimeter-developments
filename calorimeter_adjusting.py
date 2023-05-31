@@ -185,7 +185,7 @@ class BlockSocket:
             # Добавим кнопку редактирования исходных данных
             data_change_button = ttk.Button(
                 self.changer_window,
-                text="Применить",
+                text="Удалить данные",
                 width=26,
                 style='W.TButton',
                 command=self.change_input_data
@@ -303,10 +303,12 @@ class BlockSocket:
 
         # Сделаем список из кортежей
         table_data = list()
-        indx = 1
-        for point in self.max_points:
-            table_data.append((indx, round(point*25, 2), energies[indx - 1])) # умножили на коэффициент перевода в температуру
-            indx += 1
+        for indx, point in enumerate(self.max_points):
+            # Добавим условие на удалённые каналы
+            if round(point*25) == 0:
+                table_data.append((indx + 1, "-", "-"))
+            else:
+                table_data.append((indx + 1, round(point*25, 2), energies[indx])) # умножили на коэффициент перевода в температуру
 
         # Очистим содержиое таблицы
         self.tree.delete(*self.tree.get_children())
