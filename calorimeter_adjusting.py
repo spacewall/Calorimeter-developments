@@ -252,7 +252,7 @@ class BlockSocket:
         else:
             self.error_handler("Вы ввели не число, повторите попытку")
 
-    def pre_calculations(self) -> int:
+    def pre_calculations(self, smooth_param=350) -> int:
         """
         Вычисляет точки термодинамического равновесия по исходным данным, возвращает индекс точки попадания пучка
         """
@@ -282,6 +282,27 @@ class BlockSocket:
         # Отыщем минимумы производных
         self.peaks, _ = find_peaks(- 1 * self.summary, height=1.1)
 
+        # Построим зависимость энергии от выбора точки установления термодинамического равновесия
+        SLICE_FIELD = slice(self.peaks[-1] + 100, self.data.shape[0])
+        self.interval_data = self.data[SLICE_FIELD, :]
+        energy_packet = np.zeros(self.interval_data.shape)
+
+        for collumn in range(self.interval_data.shape[1]):
+            self.delta = self.interval_data[:, collumn] - np.ones_like(self.interval_data[:, 0]) * self.min_points[collumn]
+            energy_packet[:, collumn] = np.dot(self.delta, 390 * 3 * 0.025)
+
+        self.error = list()
+        for row in range(self.interval_data.shape[0]):
+            error_rate = max(energy_packet[row, :]) - min(energy_packet[row, :])
+
+            self.error.append(error_rate)
+
+        smoothed_error = gaussian_filter1d(self.error, smooth_param)
+
+        error_derivates = np.gradient(np.gradient(smoothed_error))
+        self.infls = np.where(np.diff(np.sign(error_derivates)))[0]
+        print(self.infls)
+        
         return max_point_number
 
     def extrapolation(self):
@@ -294,7 +315,7 @@ class BlockSocket:
         def exponential_fit(t, a, b, c):
             return a * np.exp(- b * t) + c
 
-    def table_calculations(self, scale_int):
+    def table_calculations(self):
         """Вычисляет энергии и заполняет таблицу в меню"""
         # Блок анализа производной
         # plt.plot(summary)
@@ -304,7 +325,7 @@ class BlockSocket:
         # plt.show()
 
         # Теперь получим номер точки, где установилось термодинамическое равновесие
-        balance_indx = self.peaks[-1] + 100 + scale_int # 100 за компенсацию среза
+        balance_indx = self.peaks[-1] + 100 + self.infls[0] # 100 за компенсацию среза
         # Найдём точку термодинамического равновесия по индексу в массиве
         balance_points = [self.data[balance_indx, el] for el in range(0, self.data.shape[1])]
 
@@ -341,20 +362,14 @@ class BlockSocket:
         except FileNotFoundError:
             pass        
 
-        # Построим зависимость энергии от выбора точки установления термодинамического равновесия
-        SLICE_FIELD = slice(self.peaks[-1] + 100, self.data.shape[0])
-        interval_data = self.data[SLICE_FIELD, :]
-        energy_packet = np.zeros(interval_data.shape)
-
         graphic_window = AppWindow("Энергетические зависимости")
         plt.close()
         fig, (ax_1, ax_2) = plt.subplots(2, 2, figsize=(12, 9))
         
-        for collumn in range(interval_data.shape[1]):
-            delta = interval_data[:, collumn] - np.ones_like(interval_data[:, 0]) * self.min_points[collumn]
+        for collumn in range(self.interval_data.shape[1]):
+            delta = self.interval_data[:, collumn] - np.ones_like(self.interval_data[:, 0]) * self.min_points[collumn]
             energies = gaussian_filter1d(np.dot(delta, 390 * 3 * 0.025), 20)
             # energies = savgol_filter(np.dot(delta, 390 * 3 * 0.025), 300, 5)
-            energy_packet[:, collumn] = np.dot(delta, 390 * 3 * 0.025)
 
             # ax_1[0].plot(savgol_filter(energies, 111, 5), label=f"Термопара {collumn + 1}")
 
@@ -376,22 +391,13 @@ class BlockSocket:
         ax_1[0].legend()
         ax_1[1].legend()
 
-        error = list()
-        for row in range(interval_data.shape[0]):
-            error_rate = max(energy_packet[row, :]) - min(energy_packet[row, :])
+        for i, infl in enumerate(self.infls, 1):
+            ax_2[1].axvline(x=infl, color='red')
+            ax_2[0].axvline(x=infl, color='red')
+            ax_1[1].axvline(x=infl, color='red')
+            ax_1[0].axvline(x=infl, color='red')
 
-            error.append(error_rate)
-
-        smoothed_error = gaussian_filter1d(error, 350)
-
-        error_derivates = np.gradient(np.gradient(smoothed_error))
-        infls = np.where(np.diff(np.sign(error_derivates)))[0]
-
-        for i, infl in enumerate(infls, 1):
-            ax_2[1].axvline(x=infl, color='k', label=f'Inflection Point {i}')
-            ax_2[0].axvline(x=infl, color='k', label=f'Inflection Point {i}')
-
-        ax_2[0].plot(gaussian_filter1d(error, 20))
+        ax_2[0].plot(gaussian_filter1d(self.error, 20))
         ax_2[0].set_title("Погрешность (разность показаний)")
         ax_2[0].set_xlabel("Время, с")
         ax_2[0].set_ylabel("∆Q, кДж")
@@ -400,8 +406,8 @@ class BlockSocket:
         #     # ax_2[1].errorbar(range(len(energy_packet[:, collumn])), energy_packet[:, collumn], yerr=error, fmt='o-', ecolor='red', capsize=4)
             # ax_2[1].plot(energy_packet[:, collumn] - error)
 
-        ax_2[1].plot(gaussian_filter1d(np.gradient(error), 20))
-        ax_2[1].plot(np.zeros_like(error), "--", color="gray")
+        ax_2[1].plot(gaussian_filter1d(np.gradient(self.error), 20))
+        ax_2[1].plot(np.zeros_like(self.error), "--", color="gray")
         ax_2[1].set_title("Дифференциальная погрешность")
         ax_2[1].set_xlabel("Время, с")
         ax_2[1].set_ylabel("d(∆Q), кДж")
@@ -461,14 +467,14 @@ class BlockSocket:
             else:
                 self.frame.canvas.create_text(x + 15, y + 45, font=('Artifakt Element', 30), text=number, fill="black")
 
-    def data_analysis(self, scale_int=560) -> None:
+    def data_analysis(self) -> None:
         """
         Вызывается по кнопке, заполняет таблицу и строит схему крепления термопар
         """
         try:
             # Рассчитаем данные для таблицы
             max_point_number = self.pre_calculations()
-            self.table_calculations(scale_int)
+            self.table_calculations()
 
             # Выведем в окно сетку термопар
             self.thermocouples_location(max_point_number)
@@ -478,7 +484,7 @@ class BlockSocket:
 
             # Рассчитаем данные для таблицы
             max_point_number = self.pre_calculations()
-            self.table_calculations(scale_int)
+            self.table_calculations()
 
             # Выведем в окно сетку термопар
             self.thermocouples_location(max_point_number)
