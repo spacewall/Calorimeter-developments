@@ -5,9 +5,11 @@ from tkinter.ttk import Frame
 from tkinter.filedialog import askopenfilename
 from tkinter import PhotoImage, Tk, Canvas, ttk, BOTH, RIDGE, Label, RAISED, NO, Entry
 import numpy as np
+import matplotlib
 from matplotlib import pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from scipy.signal import find_peaks, savgol_filter
+from scipy.optimize import curve_fit
 
 
 class OutputFrame(Frame):
@@ -281,6 +283,16 @@ class BlockSocket:
 
         return max_point_number
 
+    def extrapolation(self):
+        fitting_parameters, _ = curve_fit(exponential_fit, self, self.data)
+        a, b, c = fitting_parameters
+
+        next_x = 6
+        next_y = exponential_fit(next_x, a, b, c)
+        
+        def exponential_fit(t, a, b, c):
+            return a * np.exp(- b * t) + c
+
     def table_calculations(self, scale_int):
         """Вычисляет энергии и заполняет таблицу в меню"""
         # Блок анализа производной
@@ -496,10 +508,10 @@ class BlockSocket:
         # Выведем графики в окно
         ax.legend()
         ax.set_title("Результаты измерений")
-
-        canvas = FigureCanvasTkAgg(fig, graphic_window)
-        canvas.draw()
-        canvas.get_tk_widget().pack(fill='both', expand=100)
+        
+        self.canvas = FigureCanvasTkAgg(fig, graphic_window)
+        self.canvas.draw()
+        self.canvas.get_tk_widget().pack(fill='both', expand=100)
 
         graphic_window.mainloop()
 
@@ -533,6 +545,9 @@ def main():
     """Запуск программы"""
     # Инициализация рабочей области
     window = AppWindow("Юстировка калориметра")
+
+    # Зададим условия работы графических окон с matplotlib (окна будут закрываться всегда)
+    matplotlib.use("Agg")
 
     # Инициализация окна вывода
     frame = OutputFrame(window)
