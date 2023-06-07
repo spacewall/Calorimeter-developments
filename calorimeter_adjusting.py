@@ -10,6 +10,7 @@ from matplotlib import pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from scipy.signal import find_peaks, savgol_filter
 from scipy.optimize import curve_fit
+from scipy.ndimage import gaussian_filter1d
 
 
 class OutputFrame(Frame):
@@ -337,6 +338,8 @@ class BlockSocket:
         except AttributeError:
             self.data_loading()
             self.pre_calculations()
+        except FileNotFoundError:
+            pass        
 
         # Построим зависимость энергии от выбора точки установления термодинамического равновесия
         SLICE_FIELD = slice(self.peaks[-1] + 100, self.data.shape[0])
@@ -349,8 +352,8 @@ class BlockSocket:
         
         for collumn in range(interval_data.shape[1]):
             delta = interval_data[:, collumn] - np.ones_like(interval_data[:, 0]) * self.min_points[collumn]
-            # energies = np.dot(delta, 390 * 3 * 0.025)
-            energies = savgol_filter(np.dot(delta, 390 * 3 * 0.025), 300, 5)
+            energies = gaussian_filter1d(np.dot(delta, 390 * 3 * 0.025), 20)
+            # energies = savgol_filter(np.dot(delta, 390 * 3 * 0.025), 300, 5)
             energy_packet[:, collumn] = np.dot(delta, 390 * 3 * 0.025)
 
             # ax_1[0].plot(savgol_filter(energies, 111, 5), label=f"Термопара {collumn + 1}")
@@ -379,7 +382,16 @@ class BlockSocket:
 
             error.append(error_rate)
 
-        ax_2[0].plot(error)
+        smoothed_error = gaussian_filter1d(error, 350)
+
+        error_derivates = np.gradient(np.gradient(smoothed_error))
+        infls = np.where(np.diff(np.sign(error_derivates)))[0]
+
+        for i, infl in enumerate(infls, 1):
+            ax_2[1].axvline(x=infl, color='k', label=f'Inflection Point {i}')
+            ax_2[0].axvline(x=infl, color='k', label=f'Inflection Point {i}')
+
+        ax_2[0].plot(gaussian_filter1d(error, 20))
         ax_2[0].set_title("Погрешность (разность показаний)")
         ax_2[0].set_xlabel("Время, с")
         ax_2[0].set_ylabel("∆Q, кДж")
@@ -388,7 +400,7 @@ class BlockSocket:
         #     # ax_2[1].errorbar(range(len(energy_packet[:, collumn])), energy_packet[:, collumn], yerr=error, fmt='o-', ecolor='red', capsize=4)
             # ax_2[1].plot(energy_packet[:, collumn] - error)
 
-        ax_2[1].plot(savgol_filter(np.diff(error), 200, 7))
+        ax_2[1].plot(gaussian_filter1d(np.gradient(error), 20))
         ax_2[1].plot(np.zeros_like(error), "--", color="gray")
         ax_2[1].set_title("Дифференциальная погрешность")
         ax_2[1].set_xlabel("Время, с")
@@ -529,7 +541,7 @@ class BlockSocket:
             # Выведем зависимости в графическое окно
             self.plots(figure)
         except FileNotFoundError:
-            pass
+            figure.destroy()
 
 
 def resource_path(relative_path):
