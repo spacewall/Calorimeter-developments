@@ -1,13 +1,20 @@
-from tkinter import PhotoImage, Tk, Canvas, ttk, BOTH, RIDGE, Label, RAISED, NO, IntVar, Checkbutton
-from tkinter.ttk import Frame
 import sys, os
+import tkinter
+from tkinter.ttk import Frame
 from tkinter.filedialog import askopenfilename
+from tkinter import PhotoImage, Tk, Canvas, ttk, BOTH, RIDGE, Label, RAISED, NO, Entry, Text
+from tkinter.messagebox import showerror
 import numpy as np
+import matplotlib
 from matplotlib import pyplot as plt
-from scipy.signal import find_peaks, savgol_filter
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from scipy.signal import savgol_filter
+from scipy.optimize import curve_fit
+from scipy.ndimage import gaussian_filter1d
 
 
 class OutputFrame(Frame):
+    """Класс отвечает за графическое окно с схемой крепления термопар к калориметру"""
     def __init__(self, window):
         # Сделаем рамку для вывода графиков, рисунков и т. п.
         super().__init__(window)
@@ -29,7 +36,7 @@ class OutputFrame(Frame):
             relief=RAISED,
             width=1000,
             height=840
-            )
+        )
         self.canvas.pack(side='left', fill=BOTH)
 
         # Разместим изображение схемы калориметра
@@ -37,280 +44,546 @@ class OutputFrame(Frame):
         self.canvas.create_image(500, 420, image=self.img, anchor='center')
 
 
-def window_creating():
-    global window
-
+class AppWindow(Tk):
+    """Объект окна Tkinter - окно приложения"""
     # Инициализируем окно
-    window = Tk()
-    window.title("Юстировка калориметра")
-    # window.geometry('1438x1000')
-    window.geometry('1600x2560')
-    # window.resizable(width=False, height=False)
+    def __init__(self, title: str):
+        super().__init__()
 
-def block_creating():
-    global tree
+        self.title(title)
+        # self.geometry("1600x2560")
 
-    # Создадим кнопки, заголовки и таблицу блока взаимодействия
-    # Добавим заголовок
-    _lable = Label(
-        window,
-        text="УПРАВЛЕНИЕ",
-        relief=RIDGE,
-        font=('Artifakt Element', 30),
-        width=25,
-        borderwidth=4
-        )
-    _lable.pack(side='top')
+        # self.resizable(width=False, height=False)
+        self.geometry("1438x1000")
+        self.iconbitmap("icon.ico")
 
-    # Зададим стиль текста кнопок в панели управления
-    _style = ttk.Style()
-    _style.theme_use('classic')
-    _style.configure(
-        'W.TButton',
-        foreground='black',
-        font=('Artifakt Element', 20)
-        )
 
-    # Добавим кнопку демонстрации точки столкновения
-    point_show_button = ttk.Button(
-        window,
-        text="Показать точку столкновения",
-        width=25,
-        style='W.TButton',
-        command=data_analysis
-        )
-    point_show_button.pack(side='top', ipadx=34, ipady=20)
+class BlockSocket:
+    """Класс отвечает за отрисовку блока управления, расчёты и вывод информации"""
+    def __init__(self, window, frame) -> None:
+        self.window = window
+        self.frame = frame
 
-    # Добавим кнопку смены набора данных
-    change_data_pack_button = ttk.Button(
-        window,
-        text="Выбрать данные",
-        width=25,
-        style='W.TButton',
-        command=data_loading
-        )
-    change_data_pack_button.pack(side='top', ipadx=34, ipady=20)
+        # Создадим кнопки, заголовки и таблицу блока взаимодействия
+        # Добавим заголовок
+        main_label = Label(
+            window,
+            text="УПРАВЛЕНИЕ",
+            relief=RIDGE,
+            font=('Artifakt Element', 30),
+            width=25,
+            borderwidth=4
+            )
+        main_label.pack(side='top')
 
-    # Добавим кнопку построения графиков
-    plot_graphs_button = ttk.Button(
-        window,
-        text="Построить зависимости",
-        width=25,
-        style='W.TButton',
-        command=data_plotting
-        )
-    plot_graphs_button.pack(side='top', ipadx=34, ipady=20)
+        # Зададим стиль текста кнопок в панели управления
+        self._style = ttk.Style()
+        self._style.theme_use('classic')
+        self._style.configure(
+            'W.TButton',
+            foreground='black',
+            font=('Artifakt Element', 19)
+            )
 
-    # Создадим стиль таблицы
-    _style.configure(
-        "mystyle.Treeview",
-        highlightthickness=0,
-        bd=0,
-        font=('Artifakt Element', 11)
-        )
-    _style.configure(
-        "mystyle.Treeview.Heading",
-        font=('Artifakt Element', 13, 'bold')
-        )
+        # Добавим кнопку демонстрации точки столкновения
+        point_show_button = ttk.Button(
+            window,
+            text="Показать точку столкновения",
+            width=25,
+            style='W.TButton',
+            command=self.data_analysis
+            )
+        point_show_button.pack(side='top', ipadx=34, ipady=20)
 
-    # Добавим таблицу с максимальными значениями температур и энергиями по каждому каналу
-    columns = ("number", "value", "energy")
-    tree = ttk.Treeview(
-        columns=columns,
-        show="headings", 
-        style='mystyle.Treeview'
-        )
-    tree.pack(fill='y', expand=False, side='left')
+        # Добавим кнопку смены набора данных
+        change_data_pack_button = ttk.Button(
+            window,
+            text="Выбрать данные",
+            width=25,
+            style='W.TButton',
+            command=self.data_loading
+            )
+        change_data_pack_button.pack(side='top', ipadx=34, ipady=20)
 
-    # Определим заголовки
-    tree.heading("number", text="№")
-    tree.heading("value", text="T_max, град. C")
-    tree.heading("energy", text="Q, кДж")
+        # Добавим кнопку построения исходных зависимостей
+        plot_graphs_button = ttk.Button(
+            window,
+            text="Построить исходные зависимости",
+            width=25,
+            style='W.TButton',
+            command=self.data_plotting
+            )
+        plot_graphs_button.pack(side='top', ipadx=34, ipady=20)
 
-    # Зададим параметры колонок
-    tree.column("#1", stretch=NO, width=60)
-    tree.column("#2", stretch=NO, width=151)
-    tree.column('#3', stretch=NO, width=90)
+        # Добавим кнопку построения энергетических зависимостей
+        plot_energy_graphs_button = ttk.Button(
+            window,
+            text="Построить энергетические зависимости",
+            width=25,
+            style='W.TButton',
+            command=self.energy_dependencies_plots
+            )
+        plot_energy_graphs_button.pack(side='top', ipadx=34, ipady=20)
 
-    window.mainloop()
+        # Добавим кнопку редактирования исходных данных
+        point_show_button = ttk.Button(
+            window,
+            text="Редактировать данные",
+            width=25,
+            style='W.TButton',
+            command=self.change_input_data_interface
+            )
+        point_show_button.pack(side='top', ipadx=34, ipady=20)
 
-    return tree
+        # Добавим заголовок
+        self.output_label = Text(
+            window,
+            relief=RIDGE,
+            font=('Artifakt Element', 20),
+            height=2,
+            width=35,
+            borderwidth=4
+            )
+        self.output_label.tag_configure("center", justify='center')
+        self.output_label.insert("1.0", "Постройте энергетические зависимости\n для расчёта энергии с учётом остывания")
+        self.output_label.tag_add("center", "1.0", "end")
+        self.output_label.pack(side='top')
 
-def table_calculations(scale_int):
-    # Поиск точки попадания пучка
-    max_points = [max(data[:, el]) for el in range(0, data.shape[1])]
-    max_point_number = max_points.index(max(max_points)) + 1 # номер термопары
+        # Создадим стиль таблицы
+        self._style.configure(
+            "mystyle.Treeview",
+            highlightthickness=0,
+            bd=0,
+            font=('Artifakt Element', 11)
+            )
+        self._style.configure(
+            "mystyle.Treeview.Heading",
+            font=('Artifakt Element', 13, 'bold')
+            )
 
-    # Посчитаем энергосодержание потока
-    # Найдём точки минимума (список упорядочен по номерам термопар)
-    min_points = [min(data[:, el]) for el in range(0, data.shape[1])]
+        # Добавим таблицу с максимальными значениями температур и энергиями по каждому каналу
+        self.columns = ("number", "value", "energy")
+        self.tree = ttk.Treeview(
+            columns=self.columns,
+            show="headings", 
+            style='mystyle.Treeview'
+            )
+        self.tree.pack(fill='y', expand=False, side='left')
 
-    # Посчитаем производные
-    for collumns in range(0, data.shape[1]):
-        dU = np.diff(savgol_filter(data[:, collumns], 111, 3))
-        derivate = list()
+        # Определим заголовки
+        self.tree.heading("number", text="№")
+        self.tree.heading("value", text="T_max, град. C")
+        self.tree.heading("energy", text="Q, кДж")
 
-        for el in range(1, data.shape[0]):
-            derivate.append(dU[el - 1]/el)
+        # Зададим параметры колонок
+        self.tree.column("#1", stretch=NO, width=140)
+        self.tree.column("#2", stretch=NO, width=182)
+        self.tree.column('#3', stretch=NO, width=100)
 
-        if collumns == 0:
-            summary = np.zeros(len(derivate))
-        else:
-            summary =+ np.array(derivate)
-    
-    # Сделаем срез лишней части массива, где производная неопределена
-    summary = summary[100::] * 1000
 
-    # Отыщем минимумы производных
-    peaks, _ = find_peaks(-1*summary, height=0.02)
+        self.window.mainloop()
 
-    # Теперь получим номер точки, где установилось термодинамическое равновесие
-    balance_indx = peaks[-1] + 100 + scale_int # 100 за компенсацию среза
-    # Найдём точку термодинамического равновесия по индексу в массиве
-    balance_points = [data[balance_indx, el] for el in range(0, data.shape[1])]
+    def change_input_data_interface(self):
+        """
+        Выводит графическое окно для редактирования входных данных, за редактирование не отвечает
+        """
+        self.changer_window = AppWindow("Редактирование данных")
+        self.changer_window.geometry("400x200")
+        self.changer_window.resizable(width=False, height=False)
 
-    # Посчитаем энергосодержание потока
-    energies = list()
-    for el in range(0, data.shape[1]):
-        delta = balance_points[el] - min_points[el]
-        energies.append(round(delta * 390 * 3 * 0.025, 2)) # 0.390 Дж/(кг °С) * 3 кг * 25 °С/мВ
+        try:
+            # Добавим инструкцию
+            _label = Label(
+                self.changer_window,
+                text=f"Введите номера термопар\n через запятую (всего термопар: {self.data.shape[1]})",
+                font=('Artifakt Element', 19),
+                width=26,
+                borderwidth=4
+            )
 
-    # Блок анализа зависимостей (для тестирования)
-    # plt.plot(summary)
-    # plt.plot(peaks, summary[peaks], "x")
-    # plt.plot(np.zeros_like(summary), "--", color="gray")
-    # plt.show()
+            # Добавим кнопку редактирования исходных данных
+            data_change_button = ttk.Button(
+                self.changer_window,
+                text="Удалить данные",
+                width=26,
+                style='W.TButton',
+                command=self.change_input_data
+                )
+            
+            # Создадим окно ввода текста
+            self.user_input = Entry(
+                self.changer_window, 
+                font=('Artifakt Element', 19),
+                width=24,
+                background='white',
+                foreground='black'
+                )
+            
+            _label.pack(side='top')
+            self.user_input.pack(side='top')
+            data_change_button.pack(side='top')
 
-    # plt.plot(balance_indx * np.ones_like(balance_points), balance_points, "x")
-    # data_plotting()
+            self.changer_window.mainloop()
+        except AttributeError:
+            self.changer_window.destroy()
+            
+            showerror(title="Ошибка", message=f"Данные не загружены,\n выберите данные и повторите попытку")
 
-    # Сделаем список из кортежей
-    table_data = list()
-    indx = 1
-    for point in max_points:
-        table_data.append((indx, round(point*25, 2), energies[indx - 1])) # умножили на коэффициент перевода в температуру
-        indx += 1
-
-    # Очистим содержиое таблицы
-    tree.delete(*tree.get_children())
-
-    # Выведем данные в таблицу
-    for el in table_data:
-        tree.insert("", 'end', values=el)
-
-    return max_point_number
-
-def thermocouples_location(max_point_number):
-    # Построим сетку термопар на схеме
-    thermocouples = {
-        "1" : [False, 650, 515],
-        "2" : [True, 865, 402],
-        "3" : [False, 480, 585],
-        "4" : [True, 655, 402],
-        "5" : [False, 465, 225],
-        "6" : [False, 785, 345],
-        "7" : [False, 645, 290],
-        "8" : [False, 240, 680],
-        "9" : [False, 535, 245],
-        "10" : [True, 780, 402],
-        "11" : [False, 240, 120],
-        "12" : [False, 790, 460],
-        "13" : [True, 475, 402],
-        "14" : [True, 580, 260]
-    }
-
-    for number, coordinates in thermocouples.items():
-        is_dashed, x, y = coordinates
-
-        # Зададим условие на цвет точки попадания пучка
-        if number == str(max_point_number):
-            color = "red"
-        else:
-            color = "blue"
-
-        # Проверка условия на размещение в переднем/заднем плане
-        if is_dashed:
-            frame.canvas.create_line(x, y, x + 30, y + 30, activefill="green", fill=color, width=5, dash=2)
-
-            frame.canvas.create_line(x + 30, y, x, y + 30, activefill="green", fill=color, width=5, dash=2)
-        else:
-            frame.canvas.create_line(x, y, x + 30, y + 30, activefill="green", fill=color, width=5)
-
-            frame.canvas.create_line(x + 30, y, x, y + 30, activefill="green", fill=color, width=5)
-
-        # Добавим номера каналов
-        if number in ["8", "3", "1", "12", "10"]:
-            frame.canvas.create_text(x - 25, y + 30, font=('Artifakt Element', 30), text=number, fill="black")
-        elif number == "6":
-            frame.canvas.create_text(x - 25, y + 10, font=('Artifakt Element', 30), text=number, fill="black")
-        elif number == "2":
-            frame.canvas.create_text(x + 55, y - 15, font=('Artifakt Element', 30), text=number, fill="black")
-        else:
-            frame.canvas.create_text(x + 15, y + 45, font=('Artifakt Element', 30), text=number, fill="black")
-
-def data_analysis(scale_int=560):
-    try:
-        # Рассчитаем данные для таблицы
-        max_point_number = table_calculations(scale_int)
-
-        # Выведем в окно сетку термопар
-        thermocouples_location(max_point_number)
-    except NameError:
-        # Подгрузим данные
-        data_loading()
-
-        # Рассчитаем данные для таблицы
-        max_point_number = table_calculations(scale_int)
-
-        # Выведем в окно сетку термопар
-        thermocouples_location(max_point_number)
-    except FileNotFoundError:
-        pass
-
-def data_loading():
-    global data, check_button_list
-
-    # Запросим директорию файла с данными
-    directory = askopenfilename()
-
-    # Импортируем данные калориметра
-    data = np.genfromtxt(directory, delimiter=';', skip_header=True, skip_footer=True)
+    def change_input_data(self):
+        """
+        Отвечает за редактирование подгруженных массивов self.data
+        """
+        channels = self.user_input.get().replace(" ", "").split(",")
         
-    return data
+        self.changer_window.destroy()
 
-def plots():
-    # Построим графики по всем каналам 
-    indx = 1
-    colors = ['black', 'red', 'blue', 'yellow', 'green', '#8A2BE2', 'pink', 'violet', '#FF4500', '#C71585', '#FF8C00', '#BDB76B', '#4B0082', '#00FF00', '#00FFFF']
-    for collumns in range(0, data.shape[1]):
-        x = data[:, collumns]
-        # peaks, _ = find_peaks(x, height=0.2, width=100, prominence=1)
+        if "".join(channels).isnumeric():
+            try:
+                self.new_data = self.data
+
+                for channel in frozenset(channels):
+                    # self.new_data = np.delete(self.new_data, int(channel) - 1, 1)
+                    self.data[:, int(channel) - 1] = np.zeros_like(self.data.shape[0])
+            except IndexError:
+
+                showerror(title="Ошибка", message=f"Вы вышли за рамки от 1 до {self.data.shape[1]}")
+        else:
+            showerror(title="Ошибка", message="Вы ввели не число, повторите попытку")
+
+    def pre_calculations(self, smooth_param=350) -> int:
+        """
+        Вычисляет точки термодинамического равновесия по исходным данным, возвращает индекс точки попадания пучка
+        """
+        # Поиск точки попадания пучка
+        max_points_centered = [max(self.data[:, el] - np.dot(np.ones_like(self.data[:, el]), np.mean(self.data[0:20, el]))) for el in range(0, self.data.shape[1])]
+        max_point_number = max_points_centered.index(max(max_points_centered)) + 1 # номер термопары
+        self.max_points = [max(self.data[:, el]) for el in range(self.data.shape[1])]
+
+        # Посчитаем энергосодержание потока
+        # Найдём точки минимума (список упорядочен по номерам термопар)
+        self.min_points = list()
+        for el in range(0, self.data.shape[1]):
+            if self.data[- 1, el] <= self.data[0, el]:
+                shape = int(self.data.shape[0] / 3)
+                self.min_points.append(min(self.data[:, el][0 : shape]))
+            else:
+                self.min_points.append(min(self.data[:, el]))
+
+        min_point_numbers = [list(self.data[:, el]).index(self.min_points[el]) for el in range(self.data.shape[1])]
+        self.min_point_number = max(min_point_numbers)
+
+        # Построим зависимость энергии от выбора точки установления термодинамического равновесия
+        SLICE_FIELD = slice(self.min_point_number + 10, self.data.shape[0])
+        self.interval_data = self.data[SLICE_FIELD, :]
+        energy_packet = np.zeros(self.interval_data.shape)
+
+        for collumn in range(self.interval_data.shape[1]):
+            self.delta = self.interval_data[:, collumn] - np.ones_like(self.interval_data[:, collumn]) * self.min_points[collumn]
+            energy_packet[:, collumn] = np.dot(self.delta, 390 * 3 * 0.025)
+
+        self.mean_energy = np.zeros(energy_packet.shape[0])
+        shape_for_mean = self.interval_data.shape[1]
+        for collumn in range(self.interval_data.shape[1]):
+            if list(energy_packet[:, collumn]).count(0.) == energy_packet[:, collumn].shape[0]:
+                shape_for_mean -= 1
+                continue
+            self.mean_energy += energy_packet[:, collumn]
+        
+        self.mean_energy /= shape_for_mean
+
+        self.error = list()
+        for row in range(self.interval_data.shape[0]):
+            max_energy = max(energy_packet[row, :])
+            min_energy = min(energy_packet[row, :])
+            packet = list(energy_packet[row, :])
+
+            while max_energy == 0:
+                packet.remove(0)
+                max_energy = max(packet)
+
+            while min_energy == 0:
+                packet.remove(0)
+                min_energy = min(packet)
+
+            error_rate = max_energy - min_energy
+
+            self.error.append(error_rate)
+
+        smoothed_error = gaussian_filter1d(self.error, smooth_param)
+
+        error_derivates = np.gradient(np.gradient(smoothed_error))
+        self.infls = np.where(np.diff(np.sign(error_derivates)))[0]
+        
+        return max_point_number
+
+    def extrapolation(self, y, ax, spec=10, grade=0.7):
+        self.pre_calculations()
+        self.grade = grade
+
+        start_num = self.min_point_number - spec + self.infls[0]
+
+        y = gaussian_filter1d(y[start_num:y.shape[0]], 20)
+        x = np.linspace(start_num, y.shape[0], num=y.shape[0])
+
+        fitting_parameters, covariance = curve_fit(self.cbroot_fit, x, y)
+        a, b = fitting_parameters
+        if spec == 10:
+            next_x = np.linspace(self.min_point_number, start_num, 5)
+        else:
+            next_x = np.linspace(0, start_num, 5)
+        next_y = self.cbroot_fit(next_x, a, b)
+
+        ax.plot(next_x, next_y, 'x')
+
+        return next_y[0]
+        
+    def cbroot_fit(self, t, a, b):
+        return a * t ** self.grade + b
+
+    def table_calculations(self):
+        """Вычисляет энергии и заполняет таблицу в меню"""
+        # Блок анализа производной
+        # plt.plot(summary)
+        # x = self.data[:, collumn]
         # plt.plot(peaks, x[peaks], "x")
-        plt.plot(x, label=f"Термопара {indx}", color=colors[indx - 1])
-        plt.plot(np.zeros_like(x), "--", color="gray")
-        indx += 1
+        # plt.plot(np.zeros_like(x), "--", color="gray")
+        # plt.show()
 
-    # Выведем графики в окно
-    plt.legend()
-    plt.title("Результаты измерений")
-    plt.show()
+        # Теперь получим номер точки, где установилось термодинамическое равновесие
+        # balance_indx = self.peaks[-1] + 100 + self.infls[0] # 100 за компенсацию среза
+        balance_indx = self.min_point_number + self.infls[0] - 10
+        # Найдём точку термодинамического равновесия по индексу в массиве
+        balance_points = [self.data[balance_indx, el] for el in range(0, self.data.shape[1])]
 
-def data_plotting():
-    try:
-        # Выведем зависимости в графическое окно
-        plots()
-    except NameError:
-        # Подгрузим данные
-        data_loading()
+        # Посчитаем энергосодержание потока при фиксированном интервале
+        energies = list()
+        for el in range(0, self.data.shape[1]):
+            delta = balance_points[el] - self.min_points[el]
+            energies.append(round(delta * 390 * 3 * 0.025, 2)) # 0.390 Дж/(кг °С) * 3 кг * 25 °С/мВ
 
-        # Выведем зависимости в графическое окно
-        plots()
-    except FileNotFoundError:
-        pass
+        # Сделаем список из кортежей
+        table_data = list()
+        for indx, point in enumerate(self.max_points):
+            # Добавим условие на удалённые каналы
+            if round(point*25) == 0:
+                table_data.append((indx + 1, "-", "-"))
+            else:
+                table_data.append((indx + 1, round(point*25, 2), energies[indx])) # умножили на коэффициент перевода в температуру
+
+        # Очистим содержиое таблицы
+        self.tree.delete(*self.tree.get_children())
+
+        # Выведем данные в таблицу
+        for el in table_data:
+            self.tree.insert("", 'end', values=el)
+    
+    def energy_dependencies_plots(self):
+        """Вывод энергетических зависимостей в новое окно"""
+        # Получим необходимые переменные
+        try:
+            self.pre_calculations()
+        except AttributeError:
+            self.data_loading()
+            self.pre_calculations()
+        except FileNotFoundError:
+            pass        
+
+        graphic_window = AppWindow("Энергетические зависимости")
+        plt.close()
+        fig, (ax_1, ax_2) = plt.subplots(2, 2, figsize=(12, 9))
+        
+        for collumn in range(self.interval_data.shape[1]):
+            delta = self.interval_data[:, collumn] - np.ones_like(self.interval_data[:, 0]) * self.min_points[collumn]
+            # energies = gaussian_filter1d(np.dot(delta, 390 * 3 * 0.025), 20)
+            energies = savgol_filter(np.dot(delta, 390 * 3 * 0.025), 150, 5)
+
+            # ax_1[0].plot(savgol_filter(energies, 111, 5), label=f"Термопара {collumn + 1}")
+
+            # Условие на удалённые каналы
+            if list(energies).count(0.) == energies.shape[0]:
+                continue
+            else:
+                ax_1[0].plot(energies, label=f"Термопара {collumn + 1}")
+                # ax_1[1].plot(np.divide(np.diff(savgol_filter(energies, 550, 5)), np.diff(np.array(range(0, interval_data.shape[0])))))
+                # ax_1[1].plot(savgol_filter(np.diff(energies), 550, 5))
+                ax_1[1].plot(np.diff(energies), label=f"Термопара {collumn + 1}")
+
+        full_energy = self.extrapolation(self.mean_energy, ax_1[0], spec=self.min_point_number + 10)
+        self.output_label.delete(1.0, 'end')
+        self.output_label.insert(10.0, f"С УЧЁТОМ ОСТЫВАНИЯ\n {round(full_energy, 2)}, кДж")
+        self.output_label.tag_add("center", "1.0", "end")
+        ax_1[0].plot(np.zeros_like(energies), "--", color="gray")
+        ax_1[1].plot(np.zeros_like(energies), "--", color="gray")
+        ax_1[0].set_xlabel("Время, с")
+        ax_1[1].set_xlabel("Время, с")
+        ax_1[0].set_ylabel("Q, кДж")
+        ax_1[1].set_ylabel("dQ, кДж")
+        ax_1[0].set_title("Энергия Q, переданная калориметру")
+        ax_1[1].set_title("Дифференциальная энергия dQ, переданная калориметру")
+        ax_1[0].legend()
+        ax_1[1].legend()
+
+        ax_2[1].axvline(x=self.infls[0], color='red')
+        ax_2[0].axvline(x=self.infls[0], color='red')
+        ax_1[1].axvline(x=self.infls[0], color='red')
+        ax_1[0].axvline(x=self.infls[0], color='red')
+
+        ax_2[0].plot(gaussian_filter1d(self.error, 20))
+        ax_2[0].set_title("Погрешность (разность показаний)")
+        ax_2[0].set_xlabel("Время, с")
+        ax_2[0].set_ylabel("∆Q, кДж")
+        
+        # for collumn in range(interval_data.shape[1]):
+        #     # ax_2[1].errorbar(range(len(energy_packet[:, collumn])), energy_packet[:, collumn], yerr=error, fmt='o-', ecolor='red', capsize=4)
+            # ax_2[1].plot(energy_packet[:, collumn] - error)
+
+        ax_2[1].plot(gaussian_filter1d(np.gradient(self.error), 20))
+        ax_2[1].plot(np.zeros_like(self.error), "--", color="gray")
+        ax_2[1].set_title("Дифференциальная погрешность")
+        ax_2[1].set_xlabel("Время, с")
+        ax_2[1].set_ylabel("d(∆Q), кДж")
+
+        canvas = FigureCanvasTkAgg(fig, graphic_window)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill='both', expand=100)
+
+        graphic_window.mainloop()
+        
+    def thermocouples_location(self, max_point_number) -> None:
+        """Строит схему крепления термопар в OutputFrame"""
+        # Построим сетку термопар на схеме
+        thermocouples = {
+            "1": [False, 650, 515],
+            "2": [True, 865, 402],
+            "3": [False, 480, 585],
+            "4": [True, 655, 402],
+            "5": [False, 465, 225],
+            "6": [False, 785, 345],
+            "7": [False, 645, 290],
+            "8": [False, 240, 680],
+            "9": [False, 535, 245],
+            "10": [True, 780, 402],
+            "11": [False, 240, 120],
+            "12": [False, 790, 460],
+            "13": [True, 475, 402],
+            "14": [True, 580, 260]
+        }
+
+        for number, coordinates in thermocouples.items():
+            is_dashed, x, y = coordinates
+
+            # Зададим условие на цвет точки попадания пучка
+            if number == str(max_point_number):
+                color = "red"
+            else:
+                color = "blue"
+
+            # Проверка условия на размещение в переднем/заднем плане
+            if is_dashed:
+                self.frame.canvas.create_line(x, y, x + 30, y + 30, activefill="green", fill=color, width=5, dash=2)
+
+                self.frame.canvas.create_line(x + 30, y, x, y + 30, activefill="green", fill=color, width=5, dash=2)
+            else:
+                self.frame.canvas.create_line(x, y, x + 30, y + 30, activefill="green", fill=color, width=5)
+
+                self.frame.canvas.create_line(x + 30, y, x, y + 30, activefill="green", fill=color, width=5)
+
+            # Добавим номера каналов
+            if number in ["8", "3", "1", "12", "10"]:
+                self.frame.canvas.create_text(x - 25, y + 30, font=('Artifakt Element', 30), text=number, fill="black")
+            elif number == "6":
+                self.frame.canvas.create_text(x - 25, y + 10, font=('Artifakt Element', 30), text=number, fill="black")
+            elif number == "2":
+                self.frame.canvas.create_text(x + 55, y - 15, font=('Artifakt Element', 30), text=number, fill="black")
+            else:
+                self.frame.canvas.create_text(x + 15, y + 45, font=('Artifakt Element', 30), text=number, fill="black")
+
+    def data_analysis(self) -> None:
+        """
+        Вызывается по кнопке, заполняет таблицу и строит схему крепления термопар
+        """
+        try:
+            # Рассчитаем данные для таблицы
+            max_point_number = self.pre_calculations()
+            self.table_calculations()
+
+            # Выведем в окно сетку термопар
+            self.thermocouples_location(max_point_number)
+        except AttributeError:
+            # Подгрузим данные
+            self.data_loading()
+
+            # Рассчитаем данные для таблицы
+            max_point_number = self.pre_calculations()
+            self.table_calculations()
+
+            # Выведем в окно сетку термопар
+            self.thermocouples_location(max_point_number)
+        except FileNotFoundError:
+            pass
+
+    def data_loading(self) -> None:
+        """
+        Вызывается другими функциями или по кнопке, запрашивает файл с данными, создаёт аттрибут data
+        """
+        # Запросим директорию файла с данными
+        directory = askopenfilename()
+
+        # Импортируем данные калориметра
+        self.data = np.genfromtxt(directory, delimiter=';', skip_header=True, skip_footer=True)
+
+    def data_plotting(self) -> None:
+        """
+        Вызывается по кнопке, строит график по исходным данным. Функция строит зависимости по исходным данным в отдельном окне Tkinter. Важно: окно не очищается - каждый раз строится новое.
+        """
+
+        colors = ['black', 'red', 'blue', 'yellow', 'green', '#8A2BE2', 'pink', 'violet', '#FF4500', '#C71585', '#FF8C00', '#BDB76B', '#4B0082', '#00FF00', '#00FFFF']
+
+        fig, ax = plt.subplots(figsize=(10, 5))
+        
+        try:
+            for collumn in range(self.data.shape[1]):
+                y = self.data[:, collumn]
+                if list(y).count(0.) == y.shape[0]:
+                    continue
+                ax.plot(y, label=f"Термопара {collumn + 1}", color=colors[collumn])
+                self.extrapolation(y, ax)
+                # peaks, _ = find_peaks(x, height=0.2, width=100, prominence=1)
+                # plt.plot(peaks, x[peaks], "x")
+                # fig.subplots_adjust(bottom=0.15, left=0.2)
+        except AttributeError:
+            # Подгрузим данные
+            self.data_loading()
+
+            for collumn in range(self.data.shape[1]):
+                y = self.data[:, collumn]
+                if list(y).count(0.) == y.shape[0]:
+                    continue
+                ax.plot(y, label=f"Термопара {collumn + 1}", color=colors[collumn])
+                self.extrapolation(y, ax, grade=1 / 4)
+        except FileNotFoundError:
+            pass
+
+        graphic_window = AppWindow("Исходные зависимости")
+
+        ax.set_xlabel("Время, с")
+        ax.set_ylabel("Напряжение, В")
+        ax.plot(np.zeros_like(y), "--", color="gray")
+        ax.axvline(x=self.min_point_number - 10 + self.infls[0], color='k')
+
+        # Выведем графики в окно
+        ax.legend()
+        ax.set_title("Результаты измерений")
+        
+        self.canvas = FigureCanvasTkAgg(fig, graphic_window)
+        self.canvas.draw()
+        self.canvas.get_tk_widget().pack(fill='both', expand=100)
+
+        graphic_window.mainloop()
+
 
 def resource_path(relative_path):
     """Возвращает обсолютный путь объекта, работает для PyInstaller при компиляции в один файл"""
-
     try:
         base_path = sys._MEIPASS
     except Exception:
@@ -319,10 +592,12 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 def main():
-    global frame
-
+    """Запуск программы"""
     # Инициализация рабочей области
-    window_creating()
+    window = AppWindow("Юстировка калориметра")
+
+    # Зададим условия работы графических окон с matplotlib (окна будут закрываться всегда)
+    matplotlib.use("Agg"),
 
     # Инициализация окна вывода
     frame = OutputFrame(window)
@@ -330,7 +605,7 @@ def main():
     frame.pack(side='left', fill=BOTH, expand=True)
 
     # Инициализация блока управления
-    block_creating()
+    BlockSocket(window, frame)
 
 if __name__ == "__main__":
     main()
