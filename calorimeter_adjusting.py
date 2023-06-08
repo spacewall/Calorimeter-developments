@@ -3,7 +3,8 @@ from pprint import pprint
 import tkinter
 from tkinter.ttk import Frame
 from tkinter.filedialog import askopenfilename
-from tkinter import PhotoImage, Tk, Canvas, ttk, BOTH, RIDGE, Label, RAISED, NO, Entry
+from tkinter import PhotoImage, Tk, Canvas, ttk, BOTH, RIDGE, Label, RAISED, NO, Entry, Text
+from tkinter.messagebox import showerror
 import numpy as np
 import matplotlib
 from matplotlib import pyplot as plt
@@ -55,6 +56,7 @@ class AppWindow(Tk):
 
         # self.resizable(width=False, height=False)
         self.geometry("1438x1000")
+        self.iconbitmap("icon.ico")
 
 
 class BlockSocket:
@@ -65,7 +67,7 @@ class BlockSocket:
 
         # Создадим кнопки, заголовки и таблицу блока взаимодействия
         # Добавим заголовок
-        _label = Label(
+        main_label = Label(
             window,
             text="УПРАВЛЕНИЕ",
             relief=RIDGE,
@@ -73,7 +75,7 @@ class BlockSocket:
             width=25,
             borderwidth=4
             )
-        _label.pack(side='top')
+        main_label.pack(side='top')
 
         # Зададим стиль текста кнопок в панели управления
         self._style = ttk.Style()
@@ -134,6 +136,20 @@ class BlockSocket:
             )
         point_show_button.pack(side='top', ipadx=34, ipady=20)
 
+        # Добавим заголовок
+        self.output_label = Text(
+            window,
+            relief=RIDGE,
+            font=('Artifakt Element', 20),
+            height=2,
+            width=35,
+            borderwidth=4
+            )
+        self.output_label.tag_configure("center", justify='center')
+        self.output_label.insert("1.0", "Постройте энергетические зависимости\n для расчёта энергии с учётом остывания")
+        self.output_label.tag_add("center", "1.0", "end")
+        self.output_label.pack(side='top')
+
         # Создадим стиль таблицы
         self._style.configure(
             "mystyle.Treeview",
@@ -164,6 +180,7 @@ class BlockSocket:
         self.tree.column("#1", stretch=NO, width=140)
         self.tree.column("#2", stretch=NO, width=182)
         self.tree.column('#3', stretch=NO, width=100)
+
 
         self.window.mainloop()
 
@@ -211,26 +228,7 @@ class BlockSocket:
         except AttributeError:
             self.changer_window.destroy()
             
-            self.error_handler(f"Данные не загружены,\n выберите данные и повторите попытку")
-
-    def error_handler(self, string):
-        """Выводит сообщение об ошибке в графическое окно"""
-        self.changer_window = AppWindow("Ошибка")
-        self.changer_window.geometry("400x100")
-        self.changer_window.resizable(width=False, height=False)
-
-        # Добавим инструкцию
-        _label = Label(
-            self.changer_window,
-            text=string,
-            font=('Artifakt Element', 19),
-            width=28,
-            borderwidth=4
-        )
-
-        _label.pack(side='top')
-        
-        self.changer_window.mainloop()
+            showerror(title="Ошибка", message=f"Данные не загружены,\n выберите данные и повторите попытку")
 
     def change_input_data(self):
         """
@@ -248,9 +246,10 @@ class BlockSocket:
                     # self.new_data = np.delete(self.new_data, int(channel) - 1, 1)
                     self.data[:, int(channel) - 1] = np.zeros_like(self.data.shape[0])
             except IndexError:
-                self.error_handler(f"Вы вышли за рамки от 1 до {self.data.shape[1]}")
+
+                showerror(title="Ошибка", message=f"Вы вышли за рамки от 1 до {self.data.shape[1]}")
         else:
-            self.error_handler("Вы ввели не число, повторите попытку")
+            showerror(title="Ошибка", message="Вы ввели не число, повторите попытку")
 
     def pre_calculations(self, smooth_param=350) -> int:
         """
@@ -283,14 +282,31 @@ class BlockSocket:
             self.delta = self.interval_data[:, collumn] - np.ones_like(self.interval_data[:, collumn]) * self.min_points[collumn]
             energy_packet[:, collumn] = np.dot(self.delta, 390 * 3 * 0.025)
 
+        self.mean_energy = np.zeros(energy_packet.shape[0])
+        shape_for_mean = self.interval_data.shape[1]
+        for collumn in range(self.interval_data.shape[1]):
+            if list(energy_packet[:, collumn]).count(0.) == energy_packet[:, collumn].shape[0]:
+                shape_for_mean -= 1
+                continue
+            self.mean_energy += energy_packet[:, collumn]
+        
+        self.mean_energy /= shape_for_mean
+
         self.error = list()
         for row in range(self.interval_data.shape[0]):
             max_energy = max(energy_packet[row, :])
+            min_energy = min(energy_packet[row, :])
             packet = list(energy_packet[row, :])
+
             while max_energy == 0:
                 packet.remove(0)
                 max_energy = max(packet)
-            error_rate = max_energy - min(energy_packet[row, :])
+
+            while min_energy == 0:
+                packet.remove(0)
+                min_energy = min(packet)
+
+            error_rate = max_energy - min_energy
 
             self.error.append(error_rate)
 
@@ -301,24 +317,29 @@ class BlockSocket:
         
         return max_point_number
 
-    def extrapolation(self, y, ax, collumn):
+    def extrapolation(self, y, ax, spec=10, grade=0.7):
         self.pre_calculations()
+        self.grade = grade
 
-        start_num = self.min_point_number - 10 + self.infls[0]
+        start_num = self.min_point_number - spec + self.infls[0]
 
-        y = gaussian_filter1d(y[start_num:self.data.shape[0]], 20)
+        y = gaussian_filter1d(y[start_num:y.shape[0]], 20)
         x = np.linspace(start_num, y.shape[0], num=y.shape[0])
 
         fitting_parameters, covariance = curve_fit(self.cbroot_fit, x, y)
         a, b = fitting_parameters
-
-        next_x = np.linspace(self.min_point_number, start_num, 5)
+        if spec == 10:
+            next_x = np.linspace(self.min_point_number, start_num, 5)
+        else:
+            next_x = np.linspace(0, start_num, 5)
         next_y = self.cbroot_fit(next_x, a, b)
 
         ax.plot(next_x, next_y, 'x')
+
+        return next_y[0]
         
     def cbroot_fit(self, t, a, b):
-        return a * np.cbrt(t) + b
+        return a * t ** self.grade + b
 
     def table_calculations(self):
         """Вычисляет энергии и заполняет таблицу в меню"""
@@ -380,12 +401,18 @@ class BlockSocket:
             # ax_1[0].plot(savgol_filter(energies, 111, 5), label=f"Термопара {collumn + 1}")
 
             # Условие на удалённые каналы
-            if energies.all(0):
+            if list(energies).count(0.) == energies.shape[0]:
+                continue
+            else:
                 ax_1[0].plot(energies, label=f"Термопара {collumn + 1}")
                 # ax_1[1].plot(np.divide(np.diff(savgol_filter(energies, 550, 5)), np.diff(np.array(range(0, interval_data.shape[0])))))
                 # ax_1[1].plot(savgol_filter(np.diff(energies), 550, 5))
                 ax_1[1].plot(np.diff(energies), label=f"Термопара {collumn + 1}")
 
+        full_energy = self.extrapolation(self.mean_energy, ax_1[0], spec=self.min_point_number + 10)
+        self.output_label.delete(1.0, 'end')
+        self.output_label.insert(10.0, f"С УЧЁТОМ ОСТЫВАНИЯ\n {round(full_energy, 2)}, кДж")
+        self.output_label.tag_add("center", "1.0", "end")
         ax_1[0].plot(np.zeros_like(energies), "--", color="gray")
         ax_1[1].plot(np.zeros_like(energies), "--", color="gray")
         ax_1[0].set_xlabel("Время, с")
@@ -397,11 +424,10 @@ class BlockSocket:
         ax_1[0].legend()
         ax_1[1].legend()
 
-        for i, infl in enumerate(self.infls, 1):
-            ax_2[1].axvline(x=infl, color='red')
-            ax_2[0].axvline(x=infl, color='red')
-            ax_1[1].axvline(x=infl, color='red')
-            ax_1[0].axvline(x=infl, color='red')
+        ax_2[1].axvline(x=self.infls[0], color='red')
+        ax_2[0].axvline(x=self.infls[0], color='red')
+        ax_1[1].axvline(x=self.infls[0], color='red')
+        ax_1[0].axvline(x=self.infls[0], color='red')
 
         ax_2[0].plot(gaussian_filter1d(self.error, 20))
         ax_2[0].set_title("Погрешность (разность показаний)")
@@ -507,28 +533,44 @@ class BlockSocket:
         # Импортируем данные калориметра
         self.data = np.genfromtxt(directory, delimiter=';', skip_header=True, skip_footer=True)
 
-    def plots(self, graphic_window: AppWindow) -> None:
+    def data_plotting(self) -> None:
         """
-        Функция строит зависимости по исходным данным в отдельном окне Tkinter. Важно: окно не очищается - каждый раз строится новое.
+        Вызывается по кнопке, строит график по исходным данным. Функция строит зависимости по исходным данным в отдельном окне Tkinter. Важно: окно не очищается - каждый раз строится новое.
         """
 
-        indx = 1
         colors = ['black', 'red', 'blue', 'yellow', 'green', '#8A2BE2', 'pink', 'violet', '#FF4500', '#C71585', '#FF8C00', '#BDB76B', '#4B0082', '#00FF00', '#00FFFF']
 
         fig, ax = plt.subplots(figsize=(10, 5))
+        
+        try:
+            for collumn in range(self.data.shape[1]):
+                y = self.data[:, collumn]
+                if list(y).count(0.) == y.shape[0]:
+                    continue
+                ax.plot(y, label=f"Термопара {collumn + 1}", color=colors[collumn])
+                self.extrapolation(y, ax)
+                # peaks, _ = find_peaks(x, height=0.2, width=100, prominence=1)
+                # plt.plot(peaks, x[peaks], "x")
+                # fig.subplots_adjust(bottom=0.15, left=0.2)
+        except AttributeError:
+            # Подгрузим данные
+            self.data_loading()
 
-        for collumn in range(0, self.data.shape[1]):
-            y = self.data[:, collumn]
-            self.extrapolation(y, ax, collumn)
-            # peaks, _ = find_peaks(x, height=0.2, width=100, prominence=1)
-            # plt.plot(peaks, x[peaks], "x")
-            # fig.subplots_adjust(bottom=0.15, left=0.2)
-            ax.plot(y, label=f"Термопара {indx}", color=colors[indx - 1])
-            indx += 1
+            for collumn in range(self.data.shape[1]):
+                y = self.data[:, collumn]
+                if list(y).count(0.) == y.shape[0]:
+                    continue
+                ax.plot(y, label=f"Термопара {collumn + 1}", color=colors[collumn])
+                self.extrapolation(y, ax, grade=1 / 4)
+        except FileNotFoundError:
+            pass
+
+        graphic_window = AppWindow("Исходные зависимости")
 
         ax.set_xlabel("Время, с")
         ax.set_ylabel("Напряжение, В")
         ax.plot(np.zeros_like(y), "--", color="gray")
+        ax.axvline(x=self.min_point_number - 10 + self.infls[0], color='k')
 
         # Выведем графики в окно
         ax.legend()
@@ -539,22 +581,6 @@ class BlockSocket:
         self.canvas.get_tk_widget().pack(fill='both', expand=100)
 
         graphic_window.mainloop()
-
-    def data_plotting(self) -> None:
-        """Вызывается по кнопке, строит график по исходным данным"""
-        figure = AppWindow("Исходные зависимости")
-
-        try:
-            # Выведем зависимости в графическое окно
-            self.plots(figure)
-        except AttributeError:
-            # Подгрузим данные
-            self.data_loading()
-
-            # Выведем зависимости в графическое окно
-            self.plots(figure)
-        except FileNotFoundError:
-            figure.destroy()
 
 
 def resource_path(relative_path):
