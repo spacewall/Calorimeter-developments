@@ -259,11 +259,20 @@ class BlockSocket:
         # Поиск точки попадания пучка
         max_points_centered = [max(self.data[:, el] - np.dot(np.ones_like(self.data[:, el]), np.mean(self.data[0:20, el]))) for el in range(0, self.data.shape[1])]
         max_point_number = max_points_centered.index(max(max_points_centered)) + 1 # номер термопары
-        self.max_points = [max(self.data[:, el]) for el in range(0, self.data.shape[1])]
+        self.max_points = [max(self.data[:, el]) for el in range(self.data.shape[1])]
 
         # Посчитаем энергосодержание потока
         # Найдём точки минимума (список упорядочен по номерам термопар)
-        self.min_points = [min(self.data[:, el]) for el in range(0, self.data.shape[1])]
+        self.min_points = list()
+        for el in range(0, self.data.shape[1]):
+            if self.data[- 1, el] <= self.data[0, el]:
+                shape = int(self.data.shape[0] / 3)
+                self.min_points.append(min(self.data[:, el][0 : shape]))
+            else:
+                self.min_points.append(min(self.data[:, el]))
+
+        min_point_numbers = [list(self.data[:, el]).index(self.min_points[el]) for el in range(self.data.shape[1])]
+        self.min_point_number = max(min_point_numbers)
 
         # Посчитаем производные
         dt = np.diff(np.array(range(0, self.data.shape[0])))
@@ -301,19 +310,27 @@ class BlockSocket:
 
         error_derivates = np.gradient(np.gradient(smoothed_error))
         self.infls = np.where(np.diff(np.sign(error_derivates)))[0]
-        print(self.infls)
         
         return max_point_number
 
-    def extrapolation(self):
-        fitting_parameters, _ = curve_fit(exponential_fit, self, self.data)
-        a, b, c = fitting_parameters
+    def extrapolation(self, y, ax, collumn):
+        self.pre_calculations()
 
-        next_x = 6
-        next_y = exponential_fit(next_x, a, b, c)
+        start_num = self.peaks[-1] + 100 + self.infls[0]
+
+        y = gaussian_filter1d(y[start_num:self.data.shape[0]], 20)
+        x = np.linspace(start_num, y.shape[0], num=y.shape[0])
+
+        fitting_parameters, covariance = curve_fit(self.cbroot_fit, x, y)
+        a, b = fitting_parameters
+
+        next_x = np.linspace(self.min_point_number, start_num, 5)
+        next_y = self.cbroot_fit(next_x, a, b)
+
+        ax.plot(next_x, next_y, 'x')
         
-        def exponential_fit(t, a, b, c):
-            return a * np.exp(- b * t) + c
+    def cbroot_fit(self, t, a, b):
+        return a * np.cbrt(t) + b
 
     def table_calculations(self):
         """Вычисляет энергии и заполняет таблицу в меню"""
@@ -368,8 +385,8 @@ class BlockSocket:
         
         for collumn in range(self.interval_data.shape[1]):
             delta = self.interval_data[:, collumn] - np.ones_like(self.interval_data[:, 0]) * self.min_points[collumn]
-            energies = gaussian_filter1d(np.dot(delta, 390 * 3 * 0.025), 20)
-            # energies = savgol_filter(np.dot(delta, 390 * 3 * 0.025), 300, 5)
+            # energies = gaussian_filter1d(np.dot(delta, 390 * 3 * 0.025), 20)
+            energies = savgol_filter(np.dot(delta, 390 * 3 * 0.025), 150, 5)
 
             # ax_1[0].plot(savgol_filter(energies, 111, 5), label=f"Термопара {collumn + 1}")
 
@@ -512,16 +529,17 @@ class BlockSocket:
         fig, ax = plt.subplots(figsize=(10, 5))
 
         for collumn in range(0, self.data.shape[1]):
-            x = self.data[:, collumn]
+            y = self.data[:, collumn]
+            self.extrapolation(y, ax, collumn)
             # peaks, _ = find_peaks(x, height=0.2, width=100, prominence=1)
             # plt.plot(peaks, x[peaks], "x")
             # fig.subplots_adjust(bottom=0.15, left=0.2)
-            ax.plot(x, label=f"Термопара {indx}", color=colors[indx - 1])
+            ax.plot(y, label=f"Термопара {indx}", color=colors[indx - 1])
             indx += 1
 
         ax.set_xlabel("Время, с")
         ax.set_ylabel("Напряжение, В")
-        ax.plot(np.zeros_like(x), "--", color="gray")
+        ax.plot(np.zeros_like(y), "--", color="gray")
 
         # Выведем графики в окно
         ax.legend()
@@ -565,7 +583,7 @@ def main():
     window = AppWindow("Юстировка калориметра")
 
     # Зададим условия работы графических окон с matplotlib (окна будут закрываться всегда)
-    matplotlib.use("Agg")
+    matplotlib.use("Agg"),
 
     # Инициализация окна вывода
     frame = OutputFrame(window)
