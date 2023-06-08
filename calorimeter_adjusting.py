@@ -274,35 +274,23 @@ class BlockSocket:
         min_point_numbers = [list(self.data[:, el]).index(self.min_points[el]) for el in range(self.data.shape[1])]
         self.min_point_number = max(min_point_numbers)
 
-        # Посчитаем производные
-        dt = np.diff(np.array(range(0, self.data.shape[0])))
-        for collumn in range(self.data.shape[1]):
-            dU = np.diff(savgol_filter(self.data[:, collumn], 111, 3))
-            derivate = np.divide(dU, dt)
-
-            if collumn == 0:
-                summary = np.zeros(len(derivate))
-            else:
-                summary =+ np.array(derivate)
-        
-        # Сделаем срез лишней части массива, где производная неопределена
-        self.summary = summary[100::] * 1000
-
-        # Отыщем минимумы производных
-        self.peaks, _ = find_peaks(- 1 * self.summary, height=1.1)
-
         # Построим зависимость энергии от выбора точки установления термодинамического равновесия
-        SLICE_FIELD = slice(self.peaks[-1] + 100, self.data.shape[0])
+        SLICE_FIELD = slice(self.min_point_number + 10, self.data.shape[0])
         self.interval_data = self.data[SLICE_FIELD, :]
         energy_packet = np.zeros(self.interval_data.shape)
 
         for collumn in range(self.interval_data.shape[1]):
-            self.delta = self.interval_data[:, collumn] - np.ones_like(self.interval_data[:, 0]) * self.min_points[collumn]
+            self.delta = self.interval_data[:, collumn] - np.ones_like(self.interval_data[:, collumn]) * self.min_points[collumn]
             energy_packet[:, collumn] = np.dot(self.delta, 390 * 3 * 0.025)
 
         self.error = list()
         for row in range(self.interval_data.shape[0]):
-            error_rate = max(energy_packet[row, :]) - min(energy_packet[row, :])
+            max_energy = max(energy_packet[row, :])
+            packet = list(energy_packet[row, :])
+            while max_energy == 0:
+                packet.remove(0)
+                max_energy = max(packet)
+            error_rate = max_energy - min(energy_packet[row, :])
 
             self.error.append(error_rate)
 
@@ -316,7 +304,7 @@ class BlockSocket:
     def extrapolation(self, y, ax, collumn):
         self.pre_calculations()
 
-        start_num = self.peaks[-1] + 100 + self.infls[0]
+        start_num = self.min_point_number - 10 + self.infls[0]
 
         y = gaussian_filter1d(y[start_num:self.data.shape[0]], 20)
         x = np.linspace(start_num, y.shape[0], num=y.shape[0])
@@ -342,7 +330,8 @@ class BlockSocket:
         # plt.show()
 
         # Теперь получим номер точки, где установилось термодинамическое равновесие
-        balance_indx = self.peaks[-1] + 100 + self.infls[0] # 100 за компенсацию среза
+        # balance_indx = self.peaks[-1] + 100 + self.infls[0] # 100 за компенсацию среза
+        balance_indx = self.min_point_number + self.infls[0] - 10
         # Найдём точку термодинамического равновесия по индексу в массиве
         balance_points = [self.data[balance_indx, el] for el in range(0, self.data.shape[1])]
 
