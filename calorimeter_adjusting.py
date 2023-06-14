@@ -126,14 +126,14 @@ class BlockSocket:
         plot_energy_graphs_button.pack(side='top', ipadx=34, ipady=20)
 
         # Добавим кнопку редактирования исходных данных
-        point_show_button = ttk.Button(
+        edit_data_button = ttk.Button(
             window,
             text="Редактировать данные",
             width=25,
             style='W.TButton',
             command=self.change_input_data_interface
             )
-        point_show_button.pack(side='top', ipadx=34, ipady=20)
+        edit_data_button.pack(side='top', ipadx=34, ipady=20)
 
         # Добавим заголовок
         self.output_label = Text(
@@ -316,29 +316,30 @@ class BlockSocket:
         
         return max_point_number
 
-    def extrapolation(self, y, ax, spec=10, grade=0.7):
+    def extrapolation(self, y, ax, spec=10):
         self.pre_calculations()
-        self.grade = grade
 
         start_num = self.min_point_number - spec + self.infls[0]
+        # stop_num = divmod(y.shape[0], 3)[0]
+        stop_num = y.shape[0]
 
-        y = gaussian_filter1d(y[start_num:y.shape[0]], 20)
-        x = np.linspace(start_num, y.shape[0], num=y.shape[0])
+        y = gaussian_filter1d(y[start_num:stop_num], 20)
+        x = np.linspace(start_num, stop_num, num=y.shape[0])
 
         fitting_parameters, covariance = curve_fit(self.cbroot_fit, x, y)
         a, b = fitting_parameters
         if spec == 10:
             next_x = np.linspace(self.min_point_number, start_num, 5)
         else:
-            next_x = np.linspace(0, start_num, 5)
+            next_x = np.linspace(0, start_num,  4)
         next_y = self.cbroot_fit(next_x, a, b)
 
-        ax.plot(next_x, next_y, 'x')
+        ax.plot(next_x, next_y, 'x', color='red')
 
         return next_y[0]
         
     def cbroot_fit(self, t, a, b):
-        return a * t ** self.grade + b
+        return a * t ** 0.9 + b
 
     def table_calculations(self):
         """Вычисляет энергии и заполняет таблицу в меню"""
@@ -427,7 +428,6 @@ class BlockSocket:
         ax_2[0].axvline(x=self.infls[0], color='red')
         ax_1[1].axvline(x=self.infls[0], color='red')
         ax_1[0].axvline(x=self.infls[0], color='red')
-
         ax_2[0].plot(gaussian_filter1d(self.error, 20))
         ax_2[0].set_title("Погрешность (разность показаний)")
         ax_2[0].set_xlabel("Время, с")
@@ -597,7 +597,7 @@ def main():
     window = AppWindow("Юстировка калориметра")
 
     # Зададим условия работы графических окон с matplotlib (окна будут закрываться всегда)
-    matplotlib.use("Agg"),
+    matplotlib.use("Agg")
 
     # Инициализация окна вывода
     frame = OutputFrame(window)
